@@ -1,14 +1,22 @@
 // Écran d'un lieu : le plan et ses points.
-//   onglet « Carte »    : consulter (tout le monde)
+//   onglet « Carte »    : consulter, voir sa position (tout le monde)
 //   onglet « Préparer » : importer le plan, poser / modifier les points (code admin)
+//   onglet « Capturer » : relever la position GPS des points sur le terrain (code admin)
+//   onglet « Caler »    : régler la correspondance GPS <-> plan (code admin)
 
-import { CATEGORIES } from '../config.js';
+import { CATEGORIES, REGLAGES } from '../config.js';
 import {
   h, mettre, vider, toast, demander, confirmer, ouvrirFeuille, fermerFeuille,
   choisirFichier, partagerOuTelecharger, sansAccents, formatOctets,
 } from './outils.js';
+import { base } from './stockage.js';
 import * as lieux from './lieux.js';
+import * as position from './position.js';
 import { creerCarte } from './carte.js';
+import { calculerCalage } from './calage.js';
+import { terrainFictif } from './simulation.js';
+import { activerAntiVeille, arreterAntiVeille } from './veille.js';
+import { creerTerrain } from './terrain.js';
 
 export async function ecranLieu(zone, id) {
   const lieu = await lieux.lireLieu(id);
@@ -28,12 +36,18 @@ export async function ecranLieu(zone, id) {
     masquees: new Set(),          // catégories masquées
     recherche: '',
     derniereCategorie: CATEGORIES[0].id,
+    simulation: false,            // position fictive pour tester chez soi
+    calage: null,                 // résultat de calculerCalage()
   };
   let carte = null;
   let urlImage = null;
+  let derniere = position.instantane();   // dernier état connu de ma position
 
   const titre = h('div', { class: 'barre-titre' }, lieu.nom);
+  const bandeauSimulation = h('div', { class: 'bandeau-simulation', hidden: true }, 'SIMULATION · touche le plan pour déplacer ta position fictive');
   const bandeau = h('div', { class: 'bandeau', hidden: true });
+  const pastille = h('div', { class: 'pastille-gps', hidden: true });
+  const boutonPosition = h('button', { 'aria-label': 'Ma position', onclick: basculerPosition }, '📡');
   const zoneCarte = h('div', { class: 'zone-carte' });
   const actions = h('div', { class: 'barre-actions' });
   const onglets = h('nav', { class: 'onglets' });
@@ -43,19 +57,39 @@ export async function ecranLieu(zone, id) {
       h('button', { class: 'btn-icone', 'aria-label': 'Retour à la liste des lieux', onclick: () => { location.hash = '#/'; } }, '‹'),
       titre,
       h('button', { class: 'btn-icone', 'aria-label': 'Menu du lieu', onclick: ouvrirMenu }, '⋯')),
+    bandeauSimulation,
     bandeau,
     zoneCarte,
     h('div', { class: 'barre-bas' }, actions, onglets));
 
   const trouver = (pointId) => lieu.points.find((p) => p.id === pointId);
 
+  // Une capture faite en simulation ne compte que pendant la simulation.
+  const captureValide = (p) => !!p.capture && (etat.simulation || !p.capture.simulee);
+
+  function recalculer() {
+    const points = lieu.points
+      .filter((p) => captureValide(p) && lieux.estPlace(p) && p.calage !== false)
+      .map((p) => ({ id: p.id, lat: p.capture.lat, lon: p.capture.lon, x: p.x, y: p.y }));
+    etat.calage = calculerCalage(points, (lieu.calage && lieu.calage.methode) || 'auto');
+  }
+
   async function sauver() {
+    recalculer();
     try {
       await lieux.enregistrerLieu(lieu);
     } catch (e) {
       toast('Enregistrement impossible : ' + e.message, 'erreur', 6000);
     }
   }
+
+  function selectionner(point) {
+    etat.selection = point.id;
+    dessiner();
+    if (carte && lieux.estPlace(point)) carte.centrer(point.x, point.y);
+  }
+
+  const terrain = creerTerrain({ lieu, etat, sauver, dessiner, deselectionner, selectionner, formulairePoint, captureValide });
 
   async function exigerAdmin() {
     if (etat.admin) return true;
@@ -94,8 +128,9 @@ export async function ecranLieu(zone, id) {
     }
     urlImage = URL.createObjectURL(new Blob([plan.donnees], { type: plan.type }));
     const conteneur = h('div', { class: 'plan' });
-    zoneCarte.append(conteneur,
+    zoneCarte.append(conteneur, pastille,
       h('div', { class: 'boutons-carte' },
+        boutonPosition,
         h('button', { 'aria-label': 'Zoomer', onclick: () => carte.zoomer(1) }, '＋'),
         h('button', { 'aria-label': 'Dézoomer', onclick: () => carte.zoomer(-1) }, '－'),
         h('button', { 'aria-label': 'Voir tout le plan', onclick: () => carte.toutVoir() }, '⤢')));
@@ -106,13 +141,107 @@ export async function ecranLieu(zone, id) {
 
   function dessiner() {
     if (carte) {
+      const terrainOuvert = etat.mode === 'capturer' || etat.mode === 'caler';
       carte.afficherPoints(lieu.points.filter((p) => !etat.masquees.has(p.categorie)), {
         selection: etat.selection,
         interactif: !etat.action,
+        etat: terrainOuvert ? (p) => (captureValide(p) ? 'capture' : 'a-capturer') : null,
       });
     }
+    bandeauSimulation.hidden = !etat.simulation;
     dessinerBandeau();
     dessinerBarres();
+    dessinerPosition();
+  }
+
+  // -------------------------------------------------------------------
+  // Ma position
+  // -------------------------------------------------------------------
+  // Où je suis sur le plan : { x, y } ou null si le calage ne permet pas de le dire.
+  function maPlaceSurLePlan() {
+    const p = derniere.position;
+    if (derniere.etat !== 'ok' || !p || !etat.calage || !etat.calage.ok) return null;
+    return etat.calage.convertir(p.lat, p.lon);
+  }
+
+  function dessinerPosition() {
+    const actif = derniere.source !== 'arret';
+    boutonPosition.textContent = actif ? '◎' : '📡';
+    boutonPosition.classList.toggle('actif', actif);
+    pastille.hidden = !actif;
+    if (actif) {
+      const p = derniere.position;
+      const nom = derniere.source === 'simulation' ? 'Simulation' : 'GPS';
+      let texte;
+      let classe = 'ok';
+      if (derniere.etat === 'ok') {
+        const age = Math.round((Date.now() - p.date) / 1000);
+        texte = `${nom} ± ${Math.round(p.precision)} m`;
+        if (age >= 10) { texte += ` · il y a ${age < 90 ? age + ' s' : Math.round(age / 60) + ' min'}`; classe = 'attention'; }
+        if (p.precision > REGLAGES.precisionAlerte) classe = 'attention';
+        if (!etat.calage || !etat.calage.ok) { texte += ' · calage insuffisant : position non affichée'; classe = 'attention'; }
+      } else if (derniere.etat === 'recherche') {
+        texte = derniere.source === 'simulation' ? 'Simulation : touche le plan pour te placer' : 'Recherche GPS…';
+        classe = 'attention';
+      } else {
+        texte = derniere.message || 'Position indisponible';
+        classe = 'erreur';
+      }
+      pastille.textContent = texte;
+      pastille.className = 'pastille-gps ' + classe;
+    }
+    if (!carte) return;
+    const q = maPlaceSurLePlan();
+    carte.afficherMoi(q ? { x: q.x, y: q.y, rayon: Math.max(4, derniere.position.precision * etat.calage.pixelsParMetre) } : null);
+  }
+
+  async function basculerPosition() {
+    if (derniere.source !== 'arret') {
+      const q = maPlaceSurLePlan();
+      if (q) carte.centrer(q.x, q.y);
+      else toast(derniere.etat === 'ok' ? 'Position non affichable : le calage du plan est insuffisant.' : 'Position pas encore connue.');
+      return;
+    }
+    // L'anti-veille doit être demandée directement dans l'appui.
+    const methode = await activerAntiVeille();
+    position.demarrerGps();
+    if (!methode) toast('Impossible d\'empêcher la mise en veille : règle le verrouillage automatique du téléphone sur « Jamais ».', 'erreur', 8000);
+    if (!(await base.lire('reglages', 'notice-position'))) {
+      await base.ecrire('reglages', true, 'notice-position');
+      await demander({
+        titre: 'À savoir',
+        message: 'Ta position ne fonctionne que si IBILAW reste ouverte à l\'écran. L\'appli garde l\'écran allumé : ne verrouille pas le téléphone et ne passe pas sur une autre appli, sinon ta position se fige (surtout sur iPhone). Prévois une batterie externe.',
+        valider: 'Compris',
+        annuler: null,
+      });
+    }
+  }
+
+  async function basculerSimulation() {
+    fermerFeuille();
+    if (!etat.simulation) {
+      if (!lieu.plan) { toast('Importe d\'abord l\'image du plan.'); return; }
+      etat.simulation = true;
+      position.demarrerSimulation();
+      toast('Simulation activée : touche le plan pour déplacer ta position fictive (onglets Carte, Capturer ou Caler).', 'info', 6000);
+    } else {
+      etat.simulation = false;
+      position.arreter();
+      if (carte) carte.afficherFantome(null);
+      toast('Simulation arrêtée');
+    }
+    recalculer();
+    dessiner();
+  }
+
+  async function effacerCapturesSimulees() {
+    fermerFeuille();
+    for (const p of lieu.points) {
+      if (p.capture && p.capture.simulee) { p.capture = null; p.maj = Date.now(); }
+    }
+    await sauver();
+    dessiner();
+    toast('Captures simulées effacées');
   }
 
   function deselectionner() {
@@ -136,6 +265,12 @@ export async function ecranLieu(zone, id) {
     if (etat.action && etat.action.type === 'placer') { placer(p); return; }
     if (etat.action && etat.action.type === 'deplacer') { deplacer(p); return; }
     if (etat.mode === 'preparer') { nouveauPointIci(p); return; }
+    if (etat.simulation) {
+      const g = terrainFictif(lieu.plan).versGps(p.x, p.y);
+      carte.afficherFantome(p);
+      position.placerSimulation(g.lat, g.lon);
+      return;
+    }
     if (etat.selection) { fermerFeuille(); deselectionner(); }
   }
 
@@ -143,7 +278,8 @@ export async function ecranLieu(zone, id) {
     etat.selection = point.id;
     dessiner();
     if (etat.mode === 'preparer') ouvrirEdition(point);
-    else ouvrirFiche(point);
+    else if (etat.mode === 'carte') ouvrirFiche(point);
+    else garderVisible(point, terrain.ouvrirCapture(point));
   }
 
   // -------------------------------------------------------------------
@@ -253,16 +389,31 @@ export async function ecranLieu(zone, id) {
     const aPlacer = lieu.points.filter((p) => !lieux.estPlace(p)).length;
     if (etat.mode === 'carte') {
       actions.append(h('button', { class: 'btn', onclick: ouvrirListe }, `🔍 Points (${lieu.points.length})`));
-    } else {
+    } else if (etat.mode === 'preparer') {
       mettre(actions,
         lieu.plan && h('div', { class: 'astuce' }, 'Touche le plan pour ajouter un point, ou un point pour le modifier.'),
         h('button', { class: 'btn' + (aPlacer ? ' btn-principal' : ''), onclick: ouvrirListe },
           aPlacer ? `📋 ${aPlacer} à placer` : `📋 Points (${lieu.points.length})`),
         h('button', { class: 'btn', onclick: ouvrirCollage }, '＋ Liste'));
+    } else if (etat.mode === 'capturer') {
+      const restants = lieu.points.filter((p) => !captureValide(p)).length;
+      mettre(actions,
+        h('div', { class: 'astuce' }, 'Va à un point, touche-le sur le plan (ou dans la liste), puis capture.'),
+        h('button', { class: 'btn' + (restants ? ' btn-principal' : ''), onclick: terrain.ouvrirListeCaptures },
+          restants ? `📋 Reste ${restants}` : '📋 Tout est capturé ✅'),
+        h('button', { class: 'btn', onclick: terrain.nouveauPointIci }, '＋ Point ici'));
+    } else {
+      const r = terrain.resumeCalage();
+      mettre(actions,
+        h('div', { class: 'astuce' + (r.ok && !r.douteux ? '' : ' astuce-alerte') }, r.texte),
+        h('button', { class: 'btn btn-principal', onclick: terrain.ouvrirCalage }, '⚙️ Régler le calage'));
     }
+    const cadenas = etat.admin ? '' : '🔒 ';
     vider(onglets).append(
       onglet('carte', 'Carte'),
-      onglet('preparer', (etat.admin ? '' : '🔒 ') + 'Préparer'));
+      onglet('preparer', cadenas + 'Préparer'),
+      onglet('capturer', cadenas + 'Capturer'),
+      onglet('caler', cadenas + 'Caler'));
   }
 
   async function changerMode(mode) {
@@ -508,11 +659,15 @@ export async function ecranLieu(zone, id) {
   // -------------------------------------------------------------------
   function ouvrirMenu() {
     const bouton = (texte, action, classe = '') => h('button', { class: 'btn btn-large btn-gauche ' + classe, onclick: action }, texte);
+    const simulees = lieu.points.filter((p) => p.capture && p.capture.simulee).length;
     ouvrirFeuille({
       titre: lieu.nom,
       haute: true,
       contenu: [
         bouton('📤 Exporter ce lieu (fichier)', exporter),
+        bouton(etat.simulation ? '🧪 Arrêter la simulation' : '🧪 Mode simulation (tester chez soi)', basculerSimulation),
+        !etat.simulation && derniere.source === 'gps' && bouton('📡 Arrêter ma position', () => { fermerFeuille(); position.arreter(); arreterAntiVeille(); }),
+        etat.admin && simulees > 0 && bouton(`🧹 Effacer les ${simulees} captures simulées`, effacerCapturesSimulees),
         etat.admin && bouton('🖼 Changer l\'image du plan', importerPlan),
         etat.admin && bouton('✏️ Renommer le lieu', renommer),
         etat.admin
@@ -631,11 +786,20 @@ export async function ecranLieu(zone, id) {
   }
 
   // Les barres d'abord (pour que le plan connaisse sa vraie hauteur), puis le plan.
+  recalculer();
   dessiner();
   await monterCarte();
   dessiner();
 
+  const desabonner = position.abonner((i) => { derniere = i; dessinerPosition(); });
+  // Chaque seconde : met à jour l'ancienneté affichée de ma position.
+  const horloge = setInterval(dessinerPosition, 1000);
+
   return () => {
+    clearInterval(horloge);
+    desabonner();
+    position.arreter();
+    arreterAntiVeille();
     if (carte) carte.detruire();
     if (urlImage) URL.revokeObjectURL(urlImage);
   };

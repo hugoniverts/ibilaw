@@ -151,7 +151,7 @@ button { font: inherit; color: inherit; cursor: pointer; touch-action: manipulat
 .onglets { display: flex; border-top: 1px solid var(--bord); }
 .onglet {
   flex: 1; min-height: 54px; border: 0; border-top: 4px solid transparent;
-  background: transparent; color: var(--doux); font-weight: 800; font-size: 16px;
+  background: transparent; color: var(--doux); font-weight: 800; font-size: 15px; padding: 0 2px;
 }
 .onglet.actif { color: var(--accent); border-top-color: var(--accent); }
 
@@ -182,6 +182,50 @@ button { font: inherit; color: inherit; cursor: pointer; touch-action: manipulat
 }
 .avec-noms .pt-nom, .pt-choisi + .pt-nom { display: block; }
 .pt-choisi + .pt-nom { top: 50px; font-size: 15px; }
+
+/* En mode Capturer / Caler, la couleur du contour dit si le point est capturé. */
+.pt.pt-capture { border-color: var(--ok); }
+.pt.pt-a-capturer { border-color: #8a96a6; border-style: dashed; }
+.zoom-loin .pt.pt-capture { background: var(--ok); border-style: solid; border-color: #05070a; }
+.zoom-loin .pt.pt-a-capturer { background: #8a96a6; border-style: solid; border-color: #05070a; }
+
+/* ---------- Ma position ---------- */
+.moi {
+  width: 26px; height: 26px; border-radius: 50%;
+  background: #1e90ff; border: 4px solid #fff; box-shadow: 0 0 0 2px #0a0d12, 0 2px 8px #000;
+}
+.fantome { width: 22px; height: 22px; border-radius: 50%; border: 3px dashed var(--accent); background: rgba(255, 138, 31, 0.25); }
+.pastille-gps {
+  position: absolute; left: 10px; top: 10px; z-index: 900; max-width: calc(100% - 20px);
+  padding: 7px 12px; border-radius: 12px; font-size: 14px; font-weight: 800; line-height: 1.25;
+  background: rgba(21, 27, 36, 0.94); border: 2px solid var(--bord); pointer-events: none;
+}
+.pastille-gps.ok { border-color: var(--ok); color: var(--ok); }
+.pastille-gps.attention { border-color: var(--attention); color: var(--attention); }
+.pastille-gps.erreur { border-color: var(--danger); color: var(--danger); }
+.boutons-carte button.actif { border-color: #4db2ff; color: #4db2ff; }
+.bandeau-simulation {
+  padding: 6px 12px; text-align: center; font-size: 14px; font-weight: 800;
+  background: repeating-linear-gradient(135deg, #ff8a1f 0 14px, #ffb347 14px 28px); color: #1a0f00;
+}
+
+/* ---------- Capture et calage ---------- */
+.progression { height: 12px; border-radius: 6px; background: var(--fond); border: 1px solid var(--bord); overflow: hidden; }
+.progression > div { height: 100%; width: 0; background: var(--accent); transition: width 0.25s linear; }
+.resultat { padding: 12px 14px; border-radius: var(--rayon); font-weight: 800; background: rgba(55, 214, 122, 0.14); border: 2px solid var(--ok); color: var(--ok); }
+.resultat-faible { background: rgba(255, 197, 61, 0.14); border-color: var(--attention); color: var(--attention); }
+.alerte { padding: 12px 14px; border-radius: var(--rayon); font-weight: 700; background: rgba(255, 197, 61, 0.12); border: 2px solid var(--attention); color: var(--attention); }
+.astuce-alerte { color: var(--attention); font-weight: 700; }
+.badge-gris { background: #4a5567; color: #fff; }
+.badge-danger { background: var(--danger); color: #2a0000; }
+.feuille-sous-titre { margin-top: 6px; font-weight: 800; color: var(--doux); text-transform: uppercase; font-size: 13px; letter-spacing: 0.5px; }
+.ligne-calage { padding-left: 6px; }
+.case {
+  flex: none; width: 44px; height: 44px; border-radius: 10px; border: 3px solid var(--bord);
+  background: var(--fond); color: var(--sur-accent); font-size: 24px; font-weight: 900; line-height: 1;
+}
+.case.cochee { background: var(--ok); border-color: var(--ok); }
+.ligne-lien { border: 0; background: none; text-align: left; font-weight: 700; min-height: 44px; }
 
 /* ---------- Feuille (panneau qui monte du bas) ---------- */
 .feuille-fond { position: fixed; inset: 0; z-index: 1000; background: rgba(0, 0, 0, 0.3); }

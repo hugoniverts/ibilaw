@@ -205,6 +205,36 @@ export async function lireFichierLieu(fichier) {
   return contenu;
 }
 
+// Fusionne dans le lieu déjà présent les captures d'un fichier du même lieu
+// (deux téléphones qui capturent chacun de leur côté).
+// Un point capturé des deux côtés garde la capture la plus précise.
+export async function fusionnerCaptures(contenu) {
+  const lieu = await lireLieu(contenu.lieu.id);
+  if (!lieu) throw new Error('Le lieu d\'origine n\'est pas sur ce téléphone.');
+  const stats = { ajoutees: 0, remplacees: 0, gardees: 0, nouveaux: 0 };
+  const parId = new Map(lieu.points.map((p) => [p.id, p]));
+  const parNom = new Map(lieu.points.map((p) => [sansAccents(p.nom), p]));
+  for (const q of contenu.lieu.points) {
+    if (q.capture && q.capture.simulee) q.capture = null;
+    const p = parId.get(q.id) || parNom.get(sansAccents(q.nom));
+    if (!p) {
+      lieu.points.push(q);
+      stats.nouveaux++;
+      continue;
+    }
+    if (!estPlace(p) && estPlace(q)) { p.x = q.x; p.y = q.y; p.maj = Date.now(); }
+    if (!q.capture) continue;
+    const locale = p.capture && !p.capture.simulee ? p.capture : null;
+    if (!locale) { p.capture = q.capture; stats.ajoutees++; }
+    else if (locale.date === q.capture.date) continue;
+    else if (q.capture.precision < locale.precision) { p.capture = q.capture; stats.remplacees++; }
+    else { stats.gardees++; continue; }
+    p.maj = Date.now();
+  }
+  await enregistrerLieu(lieu);
+  return stats;
+}
+
 // mode « remplacer » : écrase le lieu du même identifiant.
 // mode « copie »     : crée un nouveau lieu à côté de l'existant.
 export async function importerLieu(contenu, mode = 'remplacer') {

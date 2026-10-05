@@ -110,10 +110,28 @@ export async function ecranAccueil(zone) {
       }
     };
     if (!existant) { await finir('remplacer'); return; }
+    const fusionner = async () => {
+      fermerFeuille();
+      try {
+        const s = await lieux.fusionnerCaptures(contenu);
+        const morceaux = [`${s.ajoutees} capture${s.ajoutees > 1 ? 's' : ''} ajoutée${s.ajoutees > 1 ? 's' : ''}`];
+        if (s.remplacees) morceaux.push(`${s.remplacees} remplacée${s.remplacees > 1 ? 's' : ''} (plus précise${s.remplacees > 1 ? 's' : ''})`);
+        if (s.gardees) morceaux.push(`${s.gardees} gardée${s.gardees > 1 ? 's' : ''} (la tienne était meilleure)`);
+        if (s.nouveaux) morceaux.push(`${s.nouveaux} nouveau${s.nouveaux > 1 ? 'x' : ''} point${s.nouveaux > 1 ? 's' : ''}`);
+        toast('Fusion terminée : ' + morceaux.join(', ') + '.', 'info', 8000);
+        location.hash = '#/lieu/' + existant.id;
+      } catch (e) {
+        toast('Fusion impossible : ' + e.message, 'erreur', 6000);
+      }
+    };
+    const capturesDuFichier = contenu.lieu.points.filter((p) => p.capture && !p.capture.simulee).length;
     ouvrirFeuille({
       titre: 'Ce lieu existe déjà',
+      haute: true,
       contenu: [
-        h('p', null, `« ${existant.nom} » est déjà sur ce téléphone (modifié le ${formatDate(existant.maj)}). Le fichier date du ${formatDate(contenu.exporte || contenu.lieu.maj)}.`),
+        h('p', null, `« ${existant.nom} » est déjà sur ce téléphone (modifié le ${formatDate(existant.maj)}). Le fichier date du ${formatDate(contenu.exporte || contenu.lieu.maj)} et contient ${capturesDuFichier} capture${capturesDuFichier > 1 ? 's' : ''} GPS.`),
+        h('button', { class: 'btn btn-principal btn-large', onclick: fusionner }, 'Fusionner les captures du fichier'),
+        h('p', { class: 'aide' }, 'Pour rassembler les captures faites sur un autre téléphone. Rien n\'est perdu : pour un point capturé des deux côtés, la capture la plus précise est gardée.'),
         h('button', { class: 'btn btn-danger btn-large', onclick: () => finir('remplacer') }, 'Remplacer par le fichier'),
         h('button', { class: 'btn btn-large', onclick: () => finir('copie') }, 'Garder les deux (importer en copie)'),
         h('button', { class: 'btn btn-large', onclick: fermerFeuille }, 'Annuler'),

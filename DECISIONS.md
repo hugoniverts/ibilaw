@@ -25,7 +25,24 @@
 - Commits Git signés avec l'adresse `hugoniverts@users.noreply.github.com` pour ne pas exposer l'adresse mail dans un dépôt public.
 - PDF du plan : converti en image à la main (4465 × 2764 pixels). L'appli n'importe pas les PDF ; à proposer à Hugo si le besoin revient pour d'autres lieux.
 
-## État au 5 octobre 2026
-Étapes 0 et 1 du lot 1 écrites et testées sur ordinateur (création de lieu, import du plan, liste collée, placement à la suite, modification, déplacement, suppression, export / import, hors-ligne). Pas encore testé sur iPhone : voir `CHECKLIST-IPHONE.md`.
+## Calage : ce que l'évaluation a montré
+Essais sur un terrain fictif déformé de quelques dizaines de mètres, avec un GPS qui tremble de 4 m :
+- Avec 6 à 12 points, la méthode souple (thin plate spline) n'est pas meilleure que la simple, et ses plus grosses erreurs sont pires (jusqu'à 45 m contre 20 m).
+- Avec 20 points, elle fait légèrement mieux (7 m contre 8 m en moyenne).
+- Avec 40 points, elle fait nettement mieux (4 m contre 7 m).
 
-Prochaine étape : position GPS, capture, simulation, puis calage et fusion des captures.
+Compromis retenu : méthode simple par défaut ; « Auto » ne passe en souple qu'à partir de 8 points et seulement si l'erreur estimée baisse d'au moins 20 %. L'erreur est estimée en retirant chaque point à tour de rôle et en mesurant où il retombe. Hugo peut forcer une méthode dans l'onglet « Caler ».
+
+Autres choix du calage et de la capture :
+- Pas de position affichée tant qu'il n'y a pas 3 points capturés et placés, ou s'ils sont presque alignés.
+- Capture : moyenne sur 8 secondes, les mesures précises comptent davantage ; la précision affichée est la précision médiane des mesures.
+- Un point créé sur place (« ＋ Point ici ») est posé automatiquement sur le plan si le calage existe déjà ; il ne sert alors pas au calage (sinon il se confirmerait lui-même).
+- Les captures faites en simulation sont marquées, ignorées hors simulation, et ne peuvent pas écraser une vraie capture.
+- Fusion de deux téléphones : par identifiant de point, sinon par nom ; pour un point capturé des deux côtés, la capture la plus précise gagne.
+- La position s'arrête quand on quitte l'écran du lieu, et le suivi GPS est relancé à chaque retour dans l'appli.
+- Simulation : terrain fictif de 900 m de large, tourné de 25°, écrasé comme une vue penchée et déformé par zones.
+
+## État au 5 octobre 2026
+Tout le lot 1 est écrit et testé sur ordinateur : lieux, plan, points, export / import, hors-ligne, simulation, capture, calage, fusion. Le vrai GPS, l'anti-veille et l'installation ne peuvent se tester que sur téléphone : voir `CHECKLIST-IPHONE.md`.
+
+Prochaine étape (lot 2) : destination et distance, session d'équipe avec Supabase, écran noir de poche, essais du suivi en fond et de la boussole.

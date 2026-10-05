@@ -41,5 +41,28 @@
 ## 7. Mise à jour
 - [ ] Après une publication, le bandeau « Nouvelle version prête » apparaît et le numéro de version change en bas de l'accueil.
 
+## 8. Simulation (à la maison)
+- [ ] Menu « ⋯ », « Mode simulation » : le bandeau rayé orange s'affiche.
+- [ ] Toucher le plan déplace le rond orange en pointillés.
+- [ ] Onglet « Capturer » : capturer 4 points en simulation fonctionne (barre de progression, précision, « Enregistrer »).
+- [ ] Après 3 captures, la pastille bleue apparaît sur le plan, près du rond orange.
+- [ ] Onglet « Caler » : l'erreur moyenne et les écarts s'affichent ; décocher un point change le résultat.
+- [ ] Arrêter la simulation, puis « Effacer les captures simulées ».
+
+## 9. Vrai GPS (dehors, dans ta rue ou un parc)
+- [ ] Toucher 📡 : l'iPhone demande l'autorisation, le message « À savoir » s'affiche une fois.
+- [ ] La pastille passe de « Recherche GPS… » à « GPS ± … m ».
+- [ ] L'écran reste allumé tant que l'appli est ouverte.
+- [ ] Passer sur une autre appli 30 secondes puis revenir : la position reprend toute seule en quelques secondes.
+- [ ] Verrouiller puis déverrouiller l'iPhone : la position reprend et l'écran reste de nouveau allumé.
+- [ ] Capturer un point réel : environ 8 mesures en 8 secondes, précision affichée.
+- [ ] En intérieur, l'avertissement « Précision faible » apparaît.
+- [ ] Avec un plan de ton quartier (capture d'écran d'une carte) et 4 points capturés : la pastille bleue te suit quand tu marches.
+- [ ] Bouton ◎ : le plan se recentre sur toi.
+
+## 10. Deux téléphones
+- [ ] Le second téléphone importe le même fichier, capture un point, exporte.
+- [ ] Sur le premier : « Importer un lieu », « Fusionner les captures du fichier » ; le résumé annonce la capture ajoutée.
+
 ## À venir
-Les tests de capture GPS, de calage, de simulation, de session d'équipe et de traces seront ajoutés avec chaque étape.
+Les tests de session d'équipe et de traces seront ajoutés avec les lots 2 et 3.

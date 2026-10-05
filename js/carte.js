@@ -51,6 +51,12 @@ export function creerCarte(conteneur, plan, urlImage) {
   const couchePoints = L.layerGroup().addTo(carte);
   let provisoire = null;
   let ecouteurPoint = null;
+  let moi = null;         // pastille « ma position »
+  let cercle = null;      // son cercle de précision
+  let fantome = null;     // vraie position fictive (simulation)
+  const pastille = (classe, taille) => L.divIcon({
+    className: 'pt-enveloppe', iconSize: [taille, taille], iconAnchor: [taille / 2, taille / 2], html: `<div class="${classe}"></div>`,
+  });
 
   function icone(point, choisi, etat) {
     const cat = categorie(point.categorie);
@@ -108,6 +114,29 @@ export function creerCarte(conteneur, plan, urlImage) {
     },
     retirerProvisoire() {
       if (provisoire) { provisoire.remove(); provisoire = null; }
+    },
+
+    // Ma position : pastille bleue et cercle de précision. p = { x, y, rayon } en pixels
+    // du plan, ou null pour la masquer.
+    afficherMoi(p) {
+      if (!p) {
+        if (moi) { moi.remove(); cercle.remove(); moi = null; cercle = null; }
+        return;
+      }
+      const ou = versCarte(p.x, p.y);
+      if (!moi) {
+        cercle = L.circle(ou, { radius: p.rayon, color: '#4db2ff', weight: 2, fillColor: '#4db2ff', fillOpacity: 0.2, interactive: false }).addTo(carte);
+        moi = L.marker(ou, { icon: pastille('moi', 26), interactive: false, keyboard: false, zIndexOffset: 3000 }).addTo(carte);
+      } else {
+        moi.setLatLng(ou);
+        cercle.setLatLng(ou);
+        cercle.setRadius(p.rayon);
+      }
+    },
+    // Simulation : l'endroit réellement touché, pour le comparer à la position calculée.
+    afficherFantome(p) {
+      if (fantome) { fantome.remove(); fantome = null; }
+      if (p) fantome = L.marker(versCarte(p.x, p.y), { icon: pastille('fantome', 22), interactive: false, keyboard: false, zIndexOffset: 2500 }).addTo(carte);
     },
 
     centrer(x, y) {

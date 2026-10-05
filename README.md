@@ -10,8 +10,8 @@ Adresse du site : **https://hugoniverts.github.io/ibilaw/**
 |---|---|---|
 | 1 | Appli installable, hors ligne, diagnostic du téléphone | Fait |
 | 1 | Lieux, image du plan, points, liste collée, export / import | Fait |
-| 1 | Position GPS, capture, simulation | À faire |
-| 1 | Calage du plan, fusion des captures de deux téléphones | À faire |
+| 1 | Position GPS, capture, simulation | Fait, à tester sur iPhone |
+| 1 | Calage du plan, fusion des captures de deux téléphones | Fait, à tester sur iPhone |
 | 2 | Recherche de destination, session d'équipe, positions en direct | À faire |
 | 3 | Traces et fichiers GPX | À faire |
 
@@ -77,9 +77,46 @@ Clic droit sur `serveur-local.ps1`, « Exécuter avec PowerShell », puis ouvrir
 
 Tout est dans `config.js` : catégories de points (nom, couleur, symbole), fonctions de l'équipe (nom, couleur), seuil de précision GPS, durée d'une capture. Republier le site après modification.
 
+## S'entraîner chez soi (mode simulation)
+
+1. Ouvrir le lieu, menu « ⋯ », « Mode simulation ». Un bandeau rayé orange reste affiché.
+2. Toucher le plan : c'est ta position fictive. Le rond orange en pointillés est l'endroit touché, la pastille bleue est la position que l'appli calcule.
+3. Onglet « Capturer » : toucher le plan sur un point pour « t'y rendre », toucher le point, « Capturer ma position ici », « Enregistrer ». Recommencer sur 4 ou 5 points.
+4. Onglet « Caler » : l'erreur moyenne et l'écart de chaque point s'affichent.
+5. Les captures faites en simulation sont marquées et ne comptent plus dès que la simulation est arrêtée. Pour les supprimer : menu « ⋯ », « Effacer les captures simulées ».
+
+Le terrain fictif est volontairement déformé par rapport au plan, pour ressembler à un vrai plan dessiné.
+
 ## Le jour du repérage
 
-Section à compléter quand la capture GPS et le calage seront livrés (fin du lot 1).
+### La veille
+- Lieu préparé sur l'ordinateur (plan, points placés), exporté, puis importé sur l'iPhone dans l'appli installée.
+- Diagnostic tout vert sur chaque téléphone qui va capturer.
+- Captures simulées effacées.
+- Batterie externe chargée : écran allumé et GPS vident un téléphone en quelques heures.
+- Si deux téléphones capturent : les deux importent **le même fichier** avant de partir.
+
+### Sur place
+1. Ouvrir IBILAW par son icône, ouvrir le lieu, toucher 📡 et autoriser la position. Attendre que la pastille affiche « GPS ± … m » en vert.
+2. Garder l'appli ouverte et l'écran allumé : sur iPhone, la position se fige dès qu'on change d'appli ou qu'on verrouille.
+3. Onglet « Capturer » (code admin). Se rendre à un point, à l'endroit exact où il est posé sur le plan, à ciel ouvert.
+4. Toucher le point (sur le plan ou dans la liste), « Capturer ma position ici », rester immobile pendant la mesure, puis « Enregistrer ».
+5. Si la précision dépasse 15 m, un avertissement s'affiche : s'écarter des bâtiments et des arbres, attendre quelques secondes, « Recommencer ».
+6. Commencer par 4 ou 5 points aux quatre coins du lieu : la position apparaît sur le plan dès 3 points, et un 4e permet de vérifier.
+7. Pour un endroit absent de la liste : « ＋ Point ici ».
+8. De temps en temps, onglet « Caler » : regarder l'erreur moyenne. Un point marqué ⚠️ a un gros écart : le recapturer, ou le décocher.
+9. À chaque pause : menu « ⋯ », « Exporter ce lieu », et s'envoyer le fichier. C'est la sauvegarde.
+
+### Rassembler les captures de deux téléphones
+1. Le second téléphone exporte son lieu et envoie le fichier.
+2. Sur le téléphone principal : « Importer un lieu (fichier) », puis « Fusionner les captures du fichier ».
+3. Pour un point capturé des deux côtés, la capture la plus précise est gardée. Les points créés sur place par l'autre téléphone sont ajoutés.
+
+### Comprendre le calage
+- « Simple » suppose que le plan est déformé partout de la même façon. C'est la méthode par défaut, fiable dès 4 ou 5 points.
+- « Souple » s'adapte zone par zone. Elle ne fait mieux qu'avec beaucoup de points bien répartis (une vingtaine ou plus) ; avec peu de points elle peut être pire.
+- « Auto » compare les deux et ne retient « Souple » que si elle est nettement meilleure.
+- Tant qu'il n'y a pas 3 points capturés et placés, non alignés, l'appli n'affiche aucune position plutôt qu'une position fausse.
 
 ## Le jour du live
 
