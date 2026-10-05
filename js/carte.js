@@ -49,8 +49,10 @@ export function creerCarte(conteneur, plan, urlImage) {
   observateur.observe(conteneur);
 
   const couchePoints = L.layerGroup().addTo(carte);
+  const coucheEquipe = L.layerGroup().addTo(carte);
   let provisoire = null;
   let ecouteurPoint = null;
+  let ecouteurEquipier = null;
   let moi = null;         // pastille « ma position »
   let cercle = null;      // son cercle de précision
   let fantome = null;     // vraie position fictive (simulation)
@@ -135,6 +137,24 @@ export function creerCarte(conteneur, plan, urlImage) {
         cercle.setRadius(p.rayon);
       }
     },
+    // Les autres membres de l'équipe.
+    // membres : [{ id, x, y, couleur, initiale, etiquette, ancien }]
+    afficherEquipe(membres) {
+      coucheEquipe.clearLayers();
+      for (const m of membres) {
+        L.marker(versCarte(m.x, m.y), {
+          icon: L.divIcon({
+            className: 'pt-enveloppe', iconSize: [36, 36], iconAnchor: [18, 18],
+            html: `<div class="equipier${m.ancien ? ' equipier-ancien' : ''}" style="--c:${m.couleur}">${echapper(m.initiale)}</div>`
+              + `<div class="equipier-nom">${echapper(m.etiquette)}</div>`,
+          }),
+          zIndexOffset: 2200,
+          keyboard: false,
+        }).on('click', () => ecouteurEquipier && ecouteurEquipier(m.id)).addTo(coucheEquipe);
+      }
+    },
+    surClicEquipier(fn) { ecouteurEquipier = fn; },
+
     // Simulation : l'endroit réellement touché, pour le comparer à la position calculée.
     afficherFantome(p) {
       if (fantome) { fantome.remove(); fantome = null; }

@@ -49,11 +49,24 @@ Autres choix du calage et de la capture :
 - La destination n'est pas mémorisée quand on quitte le lieu.
 - Écran de poche : fond noir, texte gris très sombre, déverrouillage par appui de 2 secondes. Il ne peut pas empêcher les gestes du système (balayage vers l'accueil).
 
+## Partage d'équipe (Supabase)
+- Pas de connexion permanente : toutes les 5 secondes, un seul échange « voici ma position, donne-moi celles des autres ». En cas d'échec, les essais s'espacent (jusqu'à 30 s) et reprennent dès le retour du réseau ou de l'appli à l'écran.
+- Aucune table n'est accessible directement depuis internet : l'appli ne passe que par des fonctions (vérifié : lecture directe refusée).
+- Rejoindre et se synchroniser demandent seulement le code de session. Publier demande un « code de publication », choisi par Hugo à sa première publication et jamais stocké en clair sur le serveur ; il est mémorisé sur le téléphone qui a publié.
+- L'image du plan est stockée dans la base, découpée en morceaux de texte. Un nouveau plan n'est visible de l'équipe qu'une fois complet.
+- L'ancienneté d'une position est calculée par le serveur, pour ne pas dépendre de l'heure réglée sur chaque téléphone.
+- Une position de plus de 20 secondes n'est pas renvoyée au serveur : l'ancienne reste et vieillit.
+- Mise à jour d'un lieu republié : automatique sur les téléphones de l'équipe ; proposée par un bandeau sur un téléphone où le mode admin est déverrouillé (pour ne pas écraser des modifications en cours).
+- Les captures faites en simulation ne sont pas publiées.
+- 60 personnes maximum par session.
+- Les couleurs viennent de la liste `FONCTIONS` de `config.js` ; une fonction saisie en texte libre prend la couleur « Autre ».
+- Une session d'essai (points et membres fictifs) est restée sur le serveur après les tests du 5 octobre 2026. Elle est inoffensive. Pour voir les sessions : dans l'éditeur SQL de Supabase, `select code, maj from public.sessions;` ; pour en enlever une, `delete from public.sessions where code = 'LE-CODE';`. Le code de publication d'essai a été neutralisé (ligne renommée `cle_essai_inactive` dans la table `reglages`).
+
 ## Mise en ligne
 - Site : https://hugoniverts.github.io/ibilaw/ (dépôt public `hugoniverts/ibilaw`, GitHub Pages sur la branche `main`), en ligne depuis le 5 octobre 2026.
 - Hugo a créé par erreur un dépôt `Hugo-NIVERTS`, vide et inutilisé ; à lui de le supprimer.
 
 ## État au 5 octobre 2026
-Écrit et testé sur ordinateur : tout le lot 1 (lieux, plan, points, export / import, hors-ligne, simulation, capture, calage, fusion) et le début du lot 2 (destination, écran de poche). Le vrai GPS, l'anti-veille et l'installation ne peuvent se tester que sur téléphone : voir `CHECKLIST-IPHONE.md`.
+Écrit et testé sur ordinateur : tout le lot 1 (lieux, plan, points, export / import, hors-ligne, simulation, capture, calage, fusion) et l'essentiel du lot 2 (destination, écran de poche, session d'équipe, positions en direct, mise à jour automatique, hors ligne). Le partage a été testé avec le vrai serveur et des membres simulés, pas encore avec de vrais téléphones. Le vrai GPS, l'anti-veille et l'installation ne peuvent se tester que sur téléphone : voir `CHECKLIST-IPHONE.md`.
 
-Prochaine étape : session d'équipe et positions en direct avec Supabase (compte à créer par Hugo), puis essais du suivi en fond et de la boussole.
+Prochaines étapes : essais du suivi en fond (OwnTracks) et de la boussole, puis lot 3 (traces et GPX).

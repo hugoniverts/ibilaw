@@ -73,5 +73,18 @@
 - [ ] Le second téléphone importe le même fichier, capture un point, exporte.
 - [ ] Sur le premier : « Importer un lieu », « Fusionner les captures du fichier » ; le résumé annonce la capture ajoutée.
 
+## 12. Équipe (à deux téléphones au moins)
+- [ ] Diagnostic : la ligne « Partage d'équipe » est verte.
+- [ ] Téléphone 1 : menu « ⋯ », « Publier pour l'équipe », choix du code de session et du code de publication ; « Publié ✅ » s'affiche.
+- [ ] « Envoyer l'invitation » ouvre la feuille de partage avec le lien et le code.
+- [ ] Téléphone 2 : « Rejoindre une session » avec le code ; le plan et les points arrivent.
+- [ ] Téléphone 2 en mode avion : le lieu s'ouvre toujours, « Hors ligne » s'affiche en haut à droite du plan.
+- [ ] Les deux téléphones dehors, 📡 activé : chacun voit la pastille de l'autre, de la bonne couleur.
+- [ ] « Équipe » : la liste affiche pseudo, fonction, distance et ancienneté.
+- [ ] Un téléphone choisit une destination : l'autre la voit dans la liste.
+- [ ] Un téléphone passe sur une autre appli 1 minute : chez l'autre, son ancienneté grimpe, puis revient à « à l'instant » à son retour.
+- [ ] Téléphone 1 ajoute un point et republie : il apparaît sur le téléphone 2 en quelques secondes.
+- [ ] En simulation : quatre coéquipiers fictifs apparaissent, dont un avec une position vieille de 4 minutes.
+
 ## À venir
-Les tests de session d'équipe et de traces seront ajoutés avec les lots 2 et 3.
+Les tests des traces seront ajoutés avec le lot 3.

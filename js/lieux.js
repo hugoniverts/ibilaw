@@ -243,6 +243,7 @@ export async function importerLieu(contenu, mode = 'remplacer') {
   if (mode === 'copie') {
     lieu.id = idCourt();
     lieu.nom += ' (copie)';
+    delete lieu.session;
     for (const t of traces) { t.id = idCourt(); }
   }
   for (const t of traces) t.lieuId = lieu.id;

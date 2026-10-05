@@ -27,6 +27,14 @@ export const FONCTIONS = [
   { id: 'autre', nom: 'Autre', couleur: '#9aa5b1' },
 ];
 
+// Partage d'équipe : adresse du projet Supabase et sa clé publique.
+// Ces deux valeurs sont faites pour être publiques (elles ne donnent accès qu'aux
+// fonctions prévues pour l'appli). La clé secrète, elle, ne doit jamais venir ici.
+export const PARTAGE = {
+  url: 'https://hnubndnpzjmwrjstfxjm.supabase.co',
+  cle: 'sb_publishable_pEtJoQwXpYNoPVmu6c5BTA_7JdVC6g3',
+};
+
 export const REGLAGES = {
   // Image du plan : au-delà de ce nombre de pixels, l'image est réduite à l'import
   // (16 millions = limite sûre pour un iPhone).

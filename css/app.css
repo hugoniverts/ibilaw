@@ -209,6 +209,33 @@ button { font: inherit; color: inherit; cursor: pointer; touch-action: manipulat
   background: repeating-linear-gradient(135deg, #ff8a1f 0 14px, #ffb347 14px 28px); color: #1a0f00;
 }
 
+/* ---------- Équipe ---------- */
+.equipier {
+  flex: none; width: 36px; height: 36px; border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--c, #9aa5b1); color: #0a0d12; font-weight: 900; font-size: 17px;
+  border: 3px solid #fff; box-shadow: 0 0 0 2px #0a0d12, 0 2px 8px #000;
+}
+.equipier-ancien { opacity: 0.55; border-style: dashed; }
+.equipier-nom {
+  position: absolute; top: 38px; left: 50%; transform: translateX(-50%);
+  padding: 2px 8px; border-radius: 8px; white-space: nowrap;
+  background: rgba(5, 7, 10, 0.92); color: #fff; font-size: 13px; font-weight: 800; pointer-events: none;
+}
+.ligne-deux { display: flex; flex-direction: column; line-height: 1.25; }
+.ligne-deux small { color: var(--doux); font-weight: 400; font-size: 14px; }
+.pastille-reseau {
+  position: absolute; right: 10px; top: 10px; z-index: 900; padding: 5px 10px; border-radius: 10px;
+  background: rgba(21, 27, 36, 0.94); border: 2px solid var(--bord); color: var(--doux);
+  font-size: 13px; font-weight: 800; pointer-events: none;
+}
+.bandeau-version { display: flex; align-items: center; gap: 10px; padding: 8px 12px; background: var(--surface2); border-bottom: 2px solid var(--attention); font-weight: 700; font-size: 15px; }
+.bandeau-version span { flex: 1; }
+.bandeau-version .btn { min-height: 44px; }
+.code-session { font-size: 34px; font-weight: 900; letter-spacing: 3px; text-align: center; color: var(--accent); -webkit-user-select: text; user-select: text; }
+select.champ { -webkit-appearance: menulist-button; appearance: auto; }
+.carte-lieu .badge { margin: 2px 0; }
+
 /* ---------- Destination ---------- */
 .bandeau-destination { display: flex; align-items: center; gap: 4px; padding: 4px 4px 4px 12px; background: #0b3a5c; border-bottom: 2px solid #4db2ff; }
 .destination-texte {

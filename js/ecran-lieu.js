@@ -18,6 +18,8 @@ import { terrainFictif } from './simulation.js';
 import { activerAntiVeille, arreterAntiVeille } from './veille.js';
 import { creerTerrain } from './terrain.js';
 import { ouvrirEcranDePoche } from './poche.js';
+import * as partage from './partage.js';
+import { demanderProfil, formatAge } from './equipe.js';
 
 // 237 -> « 235 m », 1240 -> « 1,2 km » (inutile d'afficher plus fin que le GPS)
 function formatDistance(metres) {
@@ -52,6 +54,18 @@ export async function ecranLieu(zone, id) {
   let derniere = position.instantane();   // dernier état connu de ma position
   let fermerPoche = null;                 // écran noir de poche ouvert ?
 
+  // Équipe (seulement si le lieu est rattaché à une session)
+  let profil = await partage.lireProfil();   // { membre, pseudo, fonction } ou rien
+  let equipe = [];                        // les autres membres, tels que reçus du serveur
+  let equipeRecue = 0;                    // heure de cette réception
+  let fauxEquipiers = [];                 // coéquipiers fictifs du mode simulation
+  let horsLigne = false;
+  let syncActive = true;
+  let minuterieSync = null;
+  let echecs = 0;
+  let versionSignalee = 0;
+  let battements = 0;
+
   const titre = h('div', { class: 'barre-titre' }, lieu.nom);
   const bandeauSimulation = h('div', { class: 'bandeau-simulation', hidden: true }, 'SIMULATION · touche le plan pour déplacer ta position fictive');
   const bandeau = h('div', { class: 'bandeau', hidden: true });
@@ -60,6 +74,11 @@ export async function ecranLieu(zone, id) {
   const bandeauDestination = h('div', { class: 'bandeau-destination', hidden: true },
     h('button', { class: 'destination-texte', 'aria-label': 'Voir le trajet', onclick: voirTrajet }, destinationNom, destinationDistance),
     h('button', { class: 'btn-icone', 'aria-label': 'Ne plus y aller', onclick: () => { etat.destination = null; dessiner(); } }, '✕'));
+  const bandeauVersion = h('div', { class: 'bandeau-version', hidden: true },
+    h('span', null, 'Une version plus récente de ce lieu a été publiée.'),
+    h('button', { class: 'btn', onclick: chargerVersionPubliee }, 'Charger'));
+  const pastilleReseau = h('div', { class: 'pastille-reseau', hidden: true }, 'Hors ligne');
+  const boutonEquipe = h('button', { class: 'btn', onclick: ouvrirEquipe }, '👥 Équipe');
   const pastille = h('div', { class: 'pastille-gps', hidden: true });
   const boutonPosition = h('button', { 'aria-label': 'Ma position', onclick: basculerPosition }, '📡');
   const boutonPoche = h('button', { 'aria-label': 'Écran noir de poche', hidden: true, onclick: ouvrirPoche }, '🌑');
@@ -73,6 +92,7 @@ export async function ecranLieu(zone, id) {
       titre,
       h('button', { class: 'btn-icone', 'aria-label': 'Menu du lieu', onclick: ouvrirMenu }, '⋯')),
     bandeauSimulation,
+    bandeauVersion,
     bandeau,
     bandeauDestination,
     zoneCarte,
@@ -144,7 +164,7 @@ export async function ecranLieu(zone, id) {
     }
     urlImage = URL.createObjectURL(new Blob([plan.donnees], { type: plan.type }));
     const conteneur = h('div', { class: 'plan' });
-    zoneCarte.append(conteneur, pastille,
+    zoneCarte.append(conteneur, pastille, pastilleReseau,
       h('div', { class: 'boutons-carte' },
         boutonPoche,
         boutonPosition,
@@ -154,6 +174,7 @@ export async function ecranLieu(zone, id) {
     carte = creerCarte(conteneur, lieu.plan, urlImage);
     carte.surClicPlan(surClicPlan);
     carte.surClicPoint(surClicPoint);
+    carte.surClicEquipier(ouvrirEquipier);
   }
 
   function dessiner() {
@@ -170,6 +191,7 @@ export async function ecranLieu(zone, id) {
     dessinerBandeau();
     dessinerBarres();
     dessinerPosition();
+    dessinerEquipe();
   }
 
   // -------------------------------------------------------------------
@@ -297,9 +319,11 @@ export async function ecranLieu(zone, id) {
       if (!lieu.plan) { toast('Importe d\'abord l\'image du plan.'); return; }
       etat.simulation = true;
       position.demarrerSimulation();
+      creerFauxEquipiers();
       toast('Simulation activée : touche le plan pour déplacer ta position fictive (onglets Carte, Capturer ou Caler).', 'info', 6000);
     } else {
       etat.simulation = false;
+      fauxEquipiers = [];
       position.arreter();
       if (carte) carte.afficherFantome(null);
       toast('Simulation arrêtée');
@@ -452,6 +476,261 @@ export async function ecranLieu(zone, id) {
   }
 
   // -------------------------------------------------------------------
+  // Équipe : positions des autres, partage de la mienne
+  // -------------------------------------------------------------------
+  // Tous les coéquipiers à afficher, avec leur ancienneté à l'instant présent (en secondes).
+  function tousLesEquipiers() {
+    const ecoule = Math.round((Date.now() - equipeRecue) / 1000);
+    return [
+      ...equipe.map((m) => ({ ...m, age: m.age + ecoule })),
+      ...(etat.simulation ? fauxEquipiers.map((m) => ({ ...m, age: m.fige ? Math.round((Date.now() - m.fige) / 1000) : 0 })) : []),
+    ];
+  }
+
+  function dessinerEquipe() {
+    const tous = tousLesEquipiers();
+    pastilleReseau.hidden = !(lieu.session && horsLigne);
+    boutonEquipe.textContent = `👥 Équipe (${tous.length})`;
+    if (!carte) return;
+    const cal = etat.calage && etat.calage.ok ? etat.calage : null;
+    carte.afficherEquipe(cal ? tous.filter((m) => m.lat != null).map((m) => {
+      const q = cal.convertir(m.lat, m.lon);
+      return {
+        id: m.membre, x: q.x, y: q.y,
+        couleur: partage.couleurFonction(m.fonction),
+        initiale: (m.pseudo[0] || '?').toUpperCase(),
+        etiquette: m.pseudo + (m.age >= 20 ? ` · ${formatAge(m.age)}` : ''),
+        ancien: m.age >= 90,
+      };
+    }) : []);
+  }
+
+  // Un échange avec le serveur, puis on programme le suivant. En cas d'échec
+  // (pas de réseau), on espace les essais et on reprend tout seul.
+  async function synchroniser() {
+    clearTimeout(minuterieSync);
+    if (!syncActive) return;
+    let attente = REGLAGES.intervallePartage * 1000;
+    if (lieu.session && document.visibilityState === 'visible') {
+      try {
+        const p = derniere.source === 'gps' && derniere.etat === 'ok' && Date.now() - derniere.position.date < 20000
+          ? derniere.position : null;
+        const but = etat.destination ? trouver(etat.destination) : null;
+        const r = await partage.synchroniser(lieu.session.code, etat.simulation ? null : profil, p, but ? but.nom : null);
+        equipe = r.membres.filter((m) => !profil || m.membre !== profil.membre);
+        equipeRecue = Date.now();
+        horsLigne = false;
+        echecs = 0;
+        if (r.version > lieu.session.version && versionSignalee !== r.version) {
+          versionSignalee = r.version;
+          // Sur un téléphone admin, on ne remplace pas le lieu sans prévenir (modifs locales possibles).
+          if (etat.admin) bandeauVersion.hidden = false;
+          else chargerVersionPubliee();
+        }
+      } catch (e) {
+        horsLigne = true;
+        echecs++;
+        if (e.code === 'SESSION_INCONNUE') {
+          syncActive = false;
+          toast('Cette session n\'existe plus sur le serveur.', 'erreur', 6000);
+        }
+        attente = Math.min(30000, attente * 2 ** Math.min(echecs, 3));
+      }
+      dessinerEquipe();
+    }
+    if (syncActive) minuterieSync = setTimeout(synchroniser, attente);
+  }
+
+  async function chargerVersionPubliee() {
+    bandeauVersion.hidden = true;
+    try {
+      const planAvant = lieu.session.planVersion;
+      const nouveau = await partage.telecharger(lieu.session.code, lieu);
+      // Même objet « lieu » pour tout l'écran : on remplace son contenu.
+      for (const cle of Object.keys(lieu)) delete lieu[cle];
+      Object.assign(lieu, nouveau);
+      titre.textContent = lieu.nom;
+      recalculer();
+      if (lieu.session.planVersion !== planAvant) await monterCarte();
+      dessiner();
+      toast('Lieu mis à jour avec la dernière version publiée');
+    } catch {
+      versionSignalee = 0;      // on réessaiera au prochain échange
+    }
+  }
+
+  function texteAge(m) {
+    if (m.lat == null) return 'pas encore de position';
+    if (m.age < 20) return 'à l\'instant';
+    return `il y a ${formatAge(m.age)}`;
+  }
+
+  function detailsEquipier(m) {
+    const morceaux = [m.fonction];
+    if (m.destination) morceaux.push(`→ ${m.destination}`);
+    if (m.lat != null && derniere.etat === 'ok') morceaux.push(`à ${formatDistance(distanceMetres(derniere.position, m))}`);
+    return morceaux.join(' · ');
+  }
+
+  function centrerSurEquipier(m) {
+    fermerFeuille();
+    const cal = etat.calage && etat.calage.ok ? etat.calage : null;
+    if (!carte || !cal || m.lat == null) { toast('Sa position n\'est pas affichable sur le plan pour l\'instant.'); return; }
+    const q = cal.convertir(m.lat, m.lon);
+    carte.centrer(q.x, q.y);
+  }
+
+  function ouvrirEquipe() {
+    const tous = tousLesEquipiers().sort((a, b) => a.pseudo.localeCompare(b.pseudo, 'fr'));
+    ouvrirFeuille({
+      titre: `Équipe · session ${lieu.session ? lieu.session.code : 'simulée'}`,
+      haute: true,
+      contenu: [
+        profil
+          ? h('p', { class: 'aide' }, `Tu apparais comme « ${profil.pseudo} » (${profil.fonction}).`
+            + (derniere.source === 'gps' ? '' : ' Ta position n\'est pas partagée : active-la avec 📡.'))
+          : h('button', { class: 'btn btn-principal btn-large', onclick: modifierProfil }, '👤 Choisir mon pseudo pour apparaître'),
+        lieu.session && horsLigne && h('p', { class: 'alerte' }, 'Hors ligne : les positions ne sont plus mises à jour. L\'appli réessaie toute seule.'),
+        !tous.length && h('p', { class: 'vide' }, 'Personne d\'autre dans la session pour l\'instant.'),
+        h('div', { class: 'liste' }, tous.map((m) => h('button', { class: 'ligne', onclick: () => centrerSurEquipier(m) },
+          h('span', { class: 'equipier', style: `--c:${partage.couleurFonction(m.fonction)}` }, (m.pseudo[0] || '?').toUpperCase()),
+          h('span', { class: 'ligne-nom ligne-deux' }, h('strong', null, m.pseudo + (m.faux ? ' (fictif)' : '')), h('small', null, detailsEquipier(m))),
+          h('span', { class: 'badge ' + (m.lat == null || m.age >= 90 ? 'badge-gris' : m.age >= 20 ? 'badge-attention' : 'badge-ok') }, texteAge(m))))),
+      ],
+    });
+  }
+
+  function ouvrirEquipier(membreId) {
+    const m = tousLesEquipiers().find((x) => x.membre === membreId);
+    if (!m) return;
+    ouvrirFeuille({
+      titre: m.pseudo + (m.faux ? ' (fictif)' : ''),
+      contenu: [
+        h('p', null, detailsEquipier(m)),
+        h('p', { class: 'aide' }, `Dernière position : ${texteAge(m)}` + (m.precision ? `, précise à ${Math.round(m.precision)} m` : '') + '.'),
+      ],
+    });
+  }
+
+  async function modifierProfil() {
+    fermerFeuille();
+    const v = await demanderProfil({ titre: 'Mon profil', profil, valider: 'Enregistrer' });
+    if (!v) return;
+    profil = await partage.enregistrerProfil(v.pseudo, v.fonction);
+    toast(`Tu apparais maintenant comme « ${profil.pseudo} »`);
+    synchroniser();
+  }
+
+  async function publierPourEquipe() {
+    fermerFeuille();
+    if (!lieu.plan) { toast('Importe d\'abord l\'image du plan.'); return; }
+    let initialisee;
+    try {
+      initialisee = await partage.publicationInitialisee();
+    } catch (e) {
+      toast(e.message, 'erreur', 6000);
+      return;
+    }
+    const memorisee = await partage.lireCleMemorisee();
+    const v = await demander({
+      titre: lieu.session ? 'Republier pour l\'équipe' : 'Publier pour l\'équipe',
+      message: 'Le plan, les points, les captures et le calage sont envoyés en ligne. L\'équipe les récupère avec le code de session.',
+      champs: [
+        {
+          nom: 'code', label: 'Code de session (à donner à l\'équipe)', placeholder: 'WALIBI25',
+          valeur: lieu.session ? lieu.session.code : sansAccents(lieu.nom).replace(/[^a-z0-9]+/g, '').toUpperCase().slice(0, 12),
+        },
+        {
+          nom: 'cle', label: initialisee ? 'Code de publication' : 'Choisis ton code de publication', valeur: memorisee || '',
+          aide: initialisee
+            ? 'Celui que tu as choisi lors de ta première publication.'
+            : '6 caractères minimum. Il protège ton espace en ligne et sera redemandé pour publier depuis un autre appareil : note-le, et ne le donne pas à l\'équipe.',
+        },
+      ],
+      valider: 'Publier',
+    });
+    if (!v) return;
+    toast('Publication en cours…');
+    try {
+      await partage.publier(lieu, v.cle, v.code, (rang, total) => { titre.textContent = `Envoi du plan ${rang + 1} / ${total}…`; });
+    } catch (e) {
+      titre.textContent = lieu.nom;
+      toast('Publication impossible : ' + e.message, 'erreur', 8000);
+      return;
+    }
+    titre.textContent = lieu.nom;
+    versionSignalee = lieu.session.version;
+    syncActive = true;
+    dessiner();
+    synchroniser();
+    const code = lieu.session.code;
+    const invitation = `IBILAW : rejoins la session ${code}.\n1. Ouvre ${location.origin}${location.pathname}\n2. Installe l'appli (iPhone : Partager, « Sur l'écran d'accueil »).\n3. Touche « Rejoindre une session » et saisis le code ${code}.`;
+    ouvrirFeuille({
+      titre: 'Publié ✅',
+      contenu: [
+        h('p', { class: 'code-session' }, code),
+        h('p', { class: 'aide' }, 'Donne ce code à l\'équipe. Chacun ouvre IBILAW, touche « Rejoindre une session », saisit le code, son pseudo et sa fonction. À faire une fois avec une bonne connexion : le plan se télécharge, puis tout marche hors ligne.'),
+        h('button', {
+          class: 'btn btn-principal btn-large',
+          onclick: async () => {
+            try {
+              if (navigator.share) await navigator.share({ text: invitation });
+              else { await navigator.clipboard.writeText(invitation); toast('Invitation copiée'); }
+            } catch { /* partage annulé */ }
+          },
+        }, '📤 Envoyer l\'invitation'),
+        !profil && h('button', { class: 'btn btn-large', onclick: modifierProfil }, '👤 Choisir mon pseudo pour apparaître sur le plan'),
+      ],
+    });
+  }
+
+  async function quitterSession() {
+    fermerFeuille();
+    const ok = await confirmer({
+      titre: 'Quitter la session ?',
+      message: 'Ta position est effacée du serveur et tu ne vois plus l\'équipe. Le lieu reste sur ce téléphone.',
+      valider: 'Quitter',
+      danger: true,
+    });
+    if (!ok) return;
+    if (profil) partage.quitter(lieu.session.code, profil.membre);
+    delete lieu.session;
+    equipe = [];
+    bandeauVersion.hidden = true;
+    await sauver();
+    dessiner();
+    toast('Session quittée');
+  }
+
+  // Coéquipiers fictifs du mode simulation : ils se promènent sur le plan et ne
+  // sortent jamais de ce téléphone.
+  function creerFauxEquipiers() {
+    const modeles = [['Léa', 'Cadreur', 0.3, 0.4], ['Max', 'Régie', 0.5, 0.55], ['Inès', 'Comédien', 0.65, 0.4], ['Tom', 'Sécurité', 0.4, 0.65]];
+    fauxEquipiers = modeles.map(([pseudo, fonction, fx, fy], i) => ({
+      membre: 'faux-' + i, pseudo, fonction, faux: true, precision: 6,
+      x: lieu.plan.largeur * fx, y: lieu.plan.hauteur * fy,
+      destination: i === 0 && lieu.points[0] ? lieu.points[0].nom : null,
+      fige: i === 3 ? Date.now() - 240000 : null,       // Tom n'a plus donné de position depuis 4 minutes
+    }));
+    bougerFauxEquipiers();
+  }
+
+  function bougerFauxEquipiers() {
+    if (!lieu.plan) return;
+    const sol = terrainFictif(lieu.plan);
+    const pas = lieu.plan.largeur / 300;
+    for (const m of fauxEquipiers) {
+      if (!m.fige || m.lat == null) {
+        if (m.lat != null) {
+          m.x = Math.min(lieu.plan.largeur * 0.9, Math.max(lieu.plan.largeur * 0.1, m.x + (Math.random() - 0.5) * 2 * pas));
+          m.y = Math.min(lieu.plan.hauteur * 0.9, Math.max(lieu.plan.hauteur * 0.1, m.y + (Math.random() - 0.5) * 2 * pas));
+        }
+        Object.assign(m, sol.versGps(m.x, m.y));
+      }
+    }
+  }
+
+  // -------------------------------------------------------------------
   // Barres du bas
   // -------------------------------------------------------------------
   function onglet(mode, texte) {
@@ -462,7 +741,9 @@ export async function ecranLieu(zone, id) {
     vider(actions);
     const aPlacer = lieu.points.filter((p) => !lieux.estPlace(p)).length;
     if (etat.mode === 'carte') {
-      actions.append(h('button', { class: 'btn', onclick: ouvrirListe }, `🔍 Points (${lieu.points.length})`));
+      mettre(actions,
+        h('button', { class: 'btn', onclick: ouvrirListe }, `🔍 Points (${lieu.points.length})`),
+        (lieu.session || etat.simulation) && boutonEquipe);
     } else if (etat.mode === 'preparer') {
       mettre(actions,
         lieu.plan && h('div', { class: 'astuce' }, 'Touche le plan pour ajouter un point, ou un point pour le modifier.'),
@@ -750,6 +1031,8 @@ export async function ecranLieu(zone, id) {
       titre: lieu.nom,
       haute: true,
       contenu: [
+        etat.admin && bouton(lieu.session ? `📡 Republier pour l'équipe (session ${lieu.session.code})` : '📡 Publier pour l\'équipe', publierPourEquipe),
+        lieu.session && bouton(profil ? `👤 Mon profil (${profil.pseudo})` : '👤 Choisir mon pseudo', modifierProfil),
         bouton('📤 Exporter ce lieu (fichier)', exporter),
         bouton(etat.simulation ? '🧪 Arrêter la simulation' : '🧪 Mode simulation (tester chez soi)', basculerSimulation),
         !etat.simulation && derniere.source === 'gps' && bouton('📡 Arrêter ma position', () => { fermerFeuille(); position.arreter(); arreterAntiVeille(); }),
@@ -760,6 +1043,7 @@ export async function ecranLieu(zone, id) {
           ? bouton('🔒 Verrouiller le mode admin', verrouiller)
           : bouton('🔓 Déverrouiller le mode admin', deverrouillerDepuisMenu),
         bouton('🩺 Diagnostic du téléphone', () => { location.hash = '#/diagnostic'; }),
+        lieu.session && bouton('🚪 Quitter la session', quitterSession),
         etat.admin && bouton('🗑 Supprimer ce lieu', supprimerLieu, 'btn-danger'),
       ],
     });
@@ -878,10 +1162,27 @@ export async function ecranLieu(zone, id) {
   dessiner();
 
   const desabonner = position.abonner((i) => { derniere = i; dessinerPosition(); });
-  // Chaque seconde : met à jour l'ancienneté affichée de ma position.
-  const horloge = setInterval(dessinerPosition, 1000);
+  // Chaque seconde : ancienneté de ma position ; toutes les 3 secondes : celle des autres
+  // (et, en simulation, les coéquipiers fictifs font quelques pas).
+  const horloge = setInterval(() => {
+    dessinerPosition();
+    if (++battements % 3 === 0) {
+      if (etat.simulation) bougerFauxEquipiers();
+      dessinerEquipe();
+    }
+  }, 1000);
+
+  // Dès qu'on revient dans l'appli ou que le réseau revient : on resynchronise tout de suite.
+  const reprendre = () => { if (document.visibilityState === 'visible') synchroniser(); };
+  document.addEventListener('visibilitychange', reprendre);
+  window.addEventListener('online', reprendre);
+  synchroniser();
 
   return () => {
+    syncActive = false;
+    clearTimeout(minuterieSync);
+    document.removeEventListener('visibilitychange', reprendre);
+    window.removeEventListener('online', reprendre);
     clearInterval(horloge);
     if (fermerPoche) fermerPoche();
     desabonner();

@@ -13,7 +13,7 @@ Adresse du site : **https://hugoniverts.github.io/ibilaw/**
 | 1 | Position GPS, capture, simulation | Fait, à tester sur iPhone |
 | 1 | Calage du plan, fusion des captures de deux téléphones | Fait, à tester sur iPhone |
 | 2 | Destination (ligne et distance), écran noir de poche | Fait, à tester sur iPhone |
-| 2 | Session d'équipe, positions en direct | À faire (compte Supabase à créer) |
+| 2 | Session d'équipe, positions en direct | Fait, à tester à plusieurs téléphones |
 | 2 | Essais : suivi en fond par une autre appli, boussole | À faire |
 | 3 | Traces et fichiers GPX | À faire |
 
@@ -127,9 +127,53 @@ Le terrain fictif est volontairement déformé par rapport au plan, pour ressemb
 - « Auto » compare les deux et ne retient « Souple » que si elle est nettement meilleure.
 - Tant qu'il n'y a pas 3 points capturés et placés, non alignés, l'appli n'affiche aucune position plutôt qu'une position fausse.
 
+## Partager avec l'équipe
+
+### Publier le lieu (organisateur)
+1. Ouvrir le lieu, menu « ⋯ », « Publier pour l'équipe ».
+2. Choisir un **code de session** (exemple : `WALIBI25`). C'est le seul code à donner à l'équipe.
+3. La toute première fois, choisir un **code de publication** (6 caractères minimum). Il protège ton espace en ligne : il est redemandé pour publier depuis un autre appareil. Le noter, ne pas le donner à l'équipe.
+4. « Publier » : le plan, les points, les captures et le calage partent en ligne. « Envoyer l'invitation » prépare un message avec le lien et le code.
+5. Après une modification (point ajouté, calage amélioré) : menu « ⋯ », « Republier ». Les téléphones de l'équipe se mettent à jour tout seuls en quelques secondes.
+
+### Rejoindre (équipe)
+1. Ouvrir IBILAW par son icône, « Rejoindre une session ».
+2. Saisir le code de session, son pseudo et sa fonction.
+3. Le lieu se télécharge une fois (à faire avec une bonne connexion), puis tout marche hors ligne.
+4. Toucher 📡 pour partager sa position.
+
+### Ce qu'on voit
+- Chaque personne est une pastille de la couleur de sa fonction, avec son initiale et son pseudo. Si sa position date de plus de 20 secondes, l'ancienneté s'affiche à côté du pseudo ; au-delà de 90 secondes la pastille devient pâle.
+- « Équipe » (onglet « Carte ») : la liste de tout le monde, avec fonction, destination en cours, distance et ancienneté. Toucher une ligne centre le plan sur la personne.
+- « Hors ligne », en haut à droite du plan : le téléphone n'arrive plus à joindre le serveur. Tout le reste continue de marcher, et l'appli réessaie toute seule.
+
+### À savoir
+- Le serveur ne garde que la dernière position de chacun, pas d'historique. Une position de plus de 24 heures n'est plus transmise.
+- Une personne dont l'appli n'est plus à l'écran garde sa dernière position, qui vieillit.
+- En mode simulation, ta position fictive n'est jamais envoyée, et quatre coéquipiers fictifs apparaissent (ils restent sur ton téléphone).
+- « Quitter la session » (menu « ⋯ ») efface ta position du serveur.
+
 ## Le jour du live
 
-Section à compléter quand la session d'équipe sera livrée (lot 2).
+### Quelques jours avant
+- Republier le lieu après le repérage (captures et calage à jour).
+- Envoyer l'invitation à l'équipe. Chacun installe l'appli, rejoint la session **en Wi-Fi**, et ouvre « Diagnostic du téléphone » : tout doit être vert, y compris « Partage d'équipe ».
+- Ouvrir `supabase.com` et vérifier que le projet `ibilaw` n'est pas en pause : un projet gratuit s'endort après 7 jours sans activité. S'il l'est, « Restore project ».
+- Une batterie externe par personne.
+
+### Le jour même
+1. Chacun ouvre IBILAW par son icône, ouvre le lieu, touche 📡.
+2. Garder l'appli à l'écran. Pour ranger le téléphone : bouton 🌑 (écran noir de poche), sans verrouiller.
+3. Pour retrouver quelqu'un : « Équipe », toucher son nom. Pour aller à un point : le toucher, « Y aller ».
+4. Si le réseau sature : chacun garde sa propre position et le plan ; les positions des autres reviennent dès que le réseau repasse.
+5. Changement de dernière minute (nouveau point de rendez-vous) : l'ajouter dans « Préparer », puis « Republier ».
+
+## Le serveur (Supabase)
+
+- Projet `ibilaw`, hébergé à Francfort, sur le compte Supabase de Hugo (connexion par GitHub).
+- La structure de la base est dans `supabase/schema.sql`. Pour la recréer : la coller dans l'éditeur SQL du projet et lancer.
+- L'adresse du projet et sa clé publique sont dans `config.js`. Ces deux valeurs sont faites pour être publiques.
+- Le mot de passe de la base a été généré par Supabase à la création et n'est noté nulle part : l'appli ne s'en sert pas. Il se réinitialise dans « Project Settings », « Database ».
 
 ## Fichiers du projet
 

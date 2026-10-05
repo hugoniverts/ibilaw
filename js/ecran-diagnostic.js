@@ -6,6 +6,7 @@ import { h, formatOctets } from './outils.js';
 import { etatStockage } from './stockage.js';
 import { etatHorsLigne } from './pwa.js';
 import { infosAppareil, activerAntiVeille, arreterAntiVeille, etatAntiVeille } from './veille.js';
+import { serveurJoignable } from './partage.js';
 
 const SYMBOLES = { ok: '✅', attention: '⚠️', erreur: '❌', attente: '⏳' };
 
@@ -80,6 +81,15 @@ export async function ecranDiagnostic(zone, { retour }) {
   majReseau();
   window.addEventListener('online', majReseau);
   window.addEventListener('offline', majReseau);
+
+  // --- Serveur du partage d'équipe
+  const serveur = ligne('Partage d\'équipe');
+  serveur.regler('attente', 'Vérification du serveur…');
+  serveurJoignable().then((ok) => {
+    if (ok) serveur.regler('ok', 'Le serveur des positions répond.');
+    else if (!navigator.onLine) serveur.regler('attention', 'Pas de réseau pour l\'instant : impossible de vérifier.');
+    else serveur.regler('erreur', 'Le serveur ne répond pas. L\'organisateur doit vérifier sur supabase.com que le projet n\'est pas en pause (un projet gratuit s\'endort après 7 jours sans activité).');
+  });
 
   // --- GPS
   const gps = ligne('GPS');
