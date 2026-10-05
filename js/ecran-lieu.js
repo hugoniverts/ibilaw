@@ -13,10 +13,17 @@ import { base } from './stockage.js';
 import * as lieux from './lieux.js';
 import * as position from './position.js';
 import { creerCarte } from './carte.js';
-import { calculerCalage } from './calage.js';
+import { calculerCalage, distanceMetres } from './calage.js';
 import { terrainFictif } from './simulation.js';
 import { activerAntiVeille, arreterAntiVeille } from './veille.js';
 import { creerTerrain } from './terrain.js';
+import { ouvrirEcranDePoche } from './poche.js';
+
+// 237 -> « 235 m », 1240 -> « 1,2 km » (inutile d'afficher plus fin que le GPS)
+function formatDistance(metres) {
+  if (metres < 950) return `${Math.max(5, Math.round(metres / 5) * 5)} m`;
+  return `${(metres / 1000).toFixed(1).replace('.', ',')} km`;
+}
 
 export async function ecranLieu(zone, id) {
   const lieu = await lieux.lireLieu(id);
@@ -38,16 +45,24 @@ export async function ecranLieu(zone, id) {
     derniereCategorie: CATEGORIES[0].id,
     simulation: false,            // position fictive pour tester chez soi
     calage: null,                 // résultat de calculerCalage()
+    destination: null,            // id du point vers lequel je vais
   };
   let carte = null;
   let urlImage = null;
   let derniere = position.instantane();   // dernier état connu de ma position
+  let fermerPoche = null;                 // écran noir de poche ouvert ?
 
   const titre = h('div', { class: 'barre-titre' }, lieu.nom);
   const bandeauSimulation = h('div', { class: 'bandeau-simulation', hidden: true }, 'SIMULATION · touche le plan pour déplacer ta position fictive');
   const bandeau = h('div', { class: 'bandeau', hidden: true });
+  const destinationNom = h('strong');
+  const destinationDistance = h('span', { class: 'destination-distance' });
+  const bandeauDestination = h('div', { class: 'bandeau-destination', hidden: true },
+    h('button', { class: 'destination-texte', 'aria-label': 'Voir le trajet', onclick: voirTrajet }, destinationNom, destinationDistance),
+    h('button', { class: 'btn-icone', 'aria-label': 'Ne plus y aller', onclick: () => { etat.destination = null; dessiner(); } }, '✕'));
   const pastille = h('div', { class: 'pastille-gps', hidden: true });
   const boutonPosition = h('button', { 'aria-label': 'Ma position', onclick: basculerPosition }, '📡');
+  const boutonPoche = h('button', { 'aria-label': 'Écran noir de poche', hidden: true, onclick: ouvrirPoche }, '🌑');
   const zoneCarte = h('div', { class: 'zone-carte' });
   const actions = h('div', { class: 'barre-actions' });
   const onglets = h('nav', { class: 'onglets' });
@@ -59,6 +74,7 @@ export async function ecranLieu(zone, id) {
       h('button', { class: 'btn-icone', 'aria-label': 'Menu du lieu', onclick: ouvrirMenu }, '⋯')),
     bandeauSimulation,
     bandeau,
+    bandeauDestination,
     zoneCarte,
     h('div', { class: 'barre-bas' }, actions, onglets));
 
@@ -130,6 +146,7 @@ export async function ecranLieu(zone, id) {
     const conteneur = h('div', { class: 'plan' });
     zoneCarte.append(conteneur, pastille,
       h('div', { class: 'boutons-carte' },
+        boutonPoche,
         boutonPosition,
         h('button', { 'aria-label': 'Zoomer', onclick: () => carte.zoomer(1) }, '＋'),
         h('button', { 'aria-label': 'Dézoomer', onclick: () => carte.zoomer(-1) }, '－'),
@@ -142,8 +159,9 @@ export async function ecranLieu(zone, id) {
   function dessiner() {
     if (carte) {
       const terrainOuvert = etat.mode === 'capturer' || etat.mode === 'caler';
-      carte.afficherPoints(lieu.points.filter((p) => !etat.masquees.has(p.categorie)), {
+      carte.afficherPoints(lieu.points.filter((p) => !etat.masquees.has(p.categorie) || p.id === etat.destination), {
         selection: etat.selection,
+        destination: etat.destination,
         interactif: !etat.action,
         etat: terrainOuvert ? (p) => (captureValide(p) ? 'capture' : 'a-capturer') : null,
       });
@@ -190,9 +208,65 @@ export async function ecranLieu(zone, id) {
       pastille.textContent = texte;
       pastille.className = 'pastille-gps ' + classe;
     }
-    if (!carte) return;
+    boutonPoche.hidden = !actif;
     const q = maPlaceSurLePlan();
-    carte.afficherMoi(q ? { x: q.x, y: q.y, rayon: Math.max(4, derniere.position.precision * etat.calage.pixelsParMetre) } : null);
+    if (carte) carte.afficherMoi(q ? { x: q.x, y: q.y, rayon: Math.max(4, derniere.position.precision * etat.calage.pixelsParMetre) } : null);
+    dessinerDestination(q);
+  }
+
+  // -------------------------------------------------------------------
+  // Destination : ligne droite et distance jusqu'à un point
+  // -------------------------------------------------------------------
+  // Distance jusqu'à un point : { metres, approx } ou null si on ne peut pas la connaître.
+  // Si le point a été capturé, c'est la vraie distance GPS ; sinon elle est estimée sur le plan.
+  function distanceVers(point, maPlace) {
+    const p = derniere.etat === 'ok' ? derniere.position : null;
+    if (!p) return null;
+    if (captureValide(point)) return { metres: distanceMetres(p, point.capture), approx: false };
+    if (maPlace && lieux.estPlace(point)) return { metres: etat.calage.metresEntre(maPlace, point), approx: true };
+    return null;
+  }
+
+  function dessinerDestination(maPlace) {
+    const but = etat.destination ? trouver(etat.destination) : null;
+    if (!but) etat.destination = null;
+    bandeauDestination.hidden = !but;
+    if (!but) {
+      if (carte) carte.afficherTrajet(null);
+      return;
+    }
+    const d = distanceVers(but, maPlace);
+    destinationNom.textContent = `🧭 ${but.nom}`;
+    if (d) {
+      destinationDistance.textContent = d.metres <= 15 ? 'Tu y es ✅' : (d.approx ? 'environ ' : '') + formatDistance(d.metres);
+    } else if (derniere.source === 'arret') {
+      destinationDistance.textContent = 'Active ta position 📡';
+    } else if (derniere.etat !== 'ok') {
+      destinationDistance.textContent = 'Position en attente…';
+    } else {
+      destinationDistance.textContent = 'Distance inconnue (calage insuffisant)';
+    }
+    if (carte) carte.afficherTrajet(maPlace && lieux.estPlace(but) ? maPlace : null, but);
+  }
+
+  function voirTrajet() {
+    const but = etat.destination ? trouver(etat.destination) : null;
+    if (!carte || !but || !lieux.estPlace(but)) return;
+    const moi = maPlaceSurLePlan();
+    if (moi) carte.voirEnsemble(moi, but);
+    else carte.centrer(but.x, but.y);
+  }
+
+  function ouvrirPoche() {
+    if (fermerPoche) fermerPoche();
+    fermerPoche = ouvrirEcranDePoche(() => {
+      const heure = new Date().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+      if (derniere.etat !== 'ok') return `${heure} · position en attente`;
+      const but = etat.destination ? trouver(etat.destination) : null;
+      const d = but ? distanceVers(but, maPlaceSurLePlan()) : null;
+      return `${heure} · ${derniere.source === 'simulation' ? 'simulation' : 'GPS'} ± ${Math.round(derniere.position.precision)} m`
+        + (d ? ` · ${but.nom} à ${formatDistance(d.metres)}` : '');
+    });
   }
 
   async function basculerPosition() {
@@ -433,9 +507,21 @@ export async function ecranLieu(zone, id) {
   // -------------------------------------------------------------------
   function ouvrirFiche(point) {
     const cat = lieux.categorie(point.categorie);
+    const estBut = etat.destination === point.id;
+    const d = distanceVers(point, maPlaceSurLePlan());
     const feuille = ouvrirFeuille({
       titre: `${cat.symbole} ${point.nom}`,
-      contenu: h('p', { class: 'aide' }, cat.nom + (point.capture ? ' · position GPS capturée' : '')),
+      contenu: [
+        h('p', { class: 'aide' }, cat.nom + (d ? ` · à ${d.approx ? 'environ ' : ''}${formatDistance(d.metres)}` : '')),
+        h('button', {
+          class: 'btn btn-large' + (estBut ? '' : ' btn-principal'),
+          onclick: () => {
+            etat.destination = estBut ? null : point.id;
+            fermerFeuille();
+            if (!estBut) voirTrajet();
+          },
+        }, estBut ? '✕ Ne plus y aller' : '🧭 Y aller'),
+      ],
       surFermeture: deselectionner,
     });
     garderVisible(point, feuille);
@@ -797,6 +883,7 @@ export async function ecranLieu(zone, id) {
 
   return () => {
     clearInterval(horloge);
+    if (fermerPoche) fermerPoche();
     desabonner();
     position.arreter();
     arreterAntiVeille();

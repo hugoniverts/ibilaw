@@ -60,7 +60,16 @@
 - [ ] Avec un plan de ton quartier (capture d'écran d'une carte) et 4 points capturés : la pastille bleue te suit quand tu marches.
 - [ ] Bouton ◎ : le plan se recentre sur toi.
 
-## 10. Deux téléphones
+## 10. Destination et écran de poche
+- [ ] Toucher un point, « Y aller » : le bandeau bleu affiche la distance, une ligne blanche part de ta position.
+- [ ] En marchant vers le point, la distance diminue ; à l'arrivée, « Tu y es ✅ ».
+- [ ] Toucher le bandeau bleu : le plan cadre ta position et la destination.
+- [ ] La croix du bandeau efface la destination et la ligne.
+- [ ] Bouton 🌑 : l'écran devient noir, les appuis courts ne font rien.
+- [ ] Téléphone en poche 2 minutes avec l'écran noir : au retour, la position a continué à se mettre à jour.
+- [ ] Doigt appuyé 2 secondes : retour au plan.
+
+## 11. Deux téléphones
 - [ ] Le second téléphone importe le même fichier, capture un point, exporte.
 - [ ] Sur le premier : « Importer un lieu », « Fusionner les captures du fichier » ; le résumé annonce la capture ajoutée.
 

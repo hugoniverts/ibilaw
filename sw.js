@@ -2,7 +2,7 @@
 //
 // À CHAQUE PUBLICATION : changer VERSION ici ET dans js/version.js (même valeur).
 // C'est ce changement qui déclenche la mise à jour sur les téléphones.
-const VERSION = '0.2.0';
+const VERSION = '0.3.0';
 
 const CACHE = 'ibilaw-' + VERSION;
 const FICHIERS = [
@@ -19,6 +19,7 @@ const FICHIERS = [
   'js/ecran-lieu.js',
   'js/lieux.js',
   'js/outils.js',
+  'js/poche.js',
   'js/position.js',
   'js/pwa.js',
   'js/simulation.js',

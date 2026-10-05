@@ -42,7 +42,18 @@ Autres choix du calage et de la capture :
 - La position s'arrête quand on quitte l'écran du lieu, et le suivi GPS est relancé à chaque retour dans l'appli.
 - Simulation : terrain fictif de 900 m de large, tourné de 25°, écrasé comme une vue penchée et déformé par zones.
 
-## État au 5 octobre 2026
-Tout le lot 1 est écrit et testé sur ordinateur : lieux, plan, points, export / import, hors-ligne, simulation, capture, calage, fusion. Le vrai GPS, l'anti-veille et l'installation ne peuvent se tester que sur téléphone : voir `CHECKLIST-IPHONE.md`.
+## Destination et écran de poche
+- Distance vers un point capturé : vraie distance GPS, qui ne dépend pas du calage. Vers un point seulement placé sur le plan : distance estimée par le calage, affichée avec « environ ».
+- Distances arrondies à 5 m (inutile d'afficher plus fin que le GPS) ; « Tu y es » à 15 m ou moins.
+- La destination reste affichée sur le plan même si sa catégorie est masquée par un filtre.
+- La destination n'est pas mémorisée quand on quitte le lieu.
+- Écran de poche : fond noir, texte gris très sombre, déverrouillage par appui de 2 secondes. Il ne peut pas empêcher les gestes du système (balayage vers l'accueil).
 
-Prochaine étape (lot 2) : destination et distance, session d'équipe avec Supabase, écran noir de poche, essais du suivi en fond et de la boussole.
+## Mise en ligne
+- Site : https://hugoniverts.github.io/ibilaw/ (dépôt public `hugoniverts/ibilaw`, GitHub Pages sur la branche `main`), en ligne depuis le 5 octobre 2026.
+- Hugo a créé par erreur un dépôt `Hugo-NIVERTS`, vide et inutilisé ; à lui de le supprimer.
+
+## État au 5 octobre 2026
+Écrit et testé sur ordinateur : tout le lot 1 (lieux, plan, points, export / import, hors-ligne, simulation, capture, calage, fusion) et le début du lot 2 (destination, écran de poche). Le vrai GPS, l'anti-veille et l'installation ne peuvent se tester que sur téléphone : voir `CHECKLIST-IPHONE.md`.
+
+Prochaine étape : session d'équipe et positions en direct avec Supabase (compte à créer par Hugo), puis essais du suivi en fond et de la boussole.

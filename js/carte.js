@@ -54,17 +54,18 @@ export function creerCarte(conteneur, plan, urlImage) {
   let moi = null;         // pastille « ma position »
   let cercle = null;      // son cercle de précision
   let fantome = null;     // vraie position fictive (simulation)
+  let trajet = null;      // ligne droite vers la destination (deux traits superposés)
   const pastille = (classe, taille) => L.divIcon({
     className: 'pt-enveloppe', iconSize: [taille, taille], iconAnchor: [taille / 2, taille / 2], html: `<div class="${classe}"></div>`,
   });
 
-  function icone(point, choisi, etat) {
+  function icone(point, choisi, etat, but) {
     const cat = categorie(point.categorie);
     return L.divIcon({
       className: 'pt-enveloppe',
       iconSize: [40, 40],
       iconAnchor: [20, 20],
-      html: `<div class="pt${choisi ? ' pt-choisi' : ''}${etat ? ' pt-' + etat : ''}" style="--c:${cat.couleur}"><span>${cat.symbole}</span></div>`
+      html: `<div class="pt${choisi ? ' pt-choisi' : ''}${but ? ' pt-but' : ''}${etat ? ' pt-' + etat : ''}" style="--c:${cat.couleur}"><span>${cat.symbole}</span></div>`
         + `<div class="pt-nom">${echapper(point.nom)}</div>`,
     });
   }
@@ -83,9 +84,10 @@ export function creerCarte(conteneur, plan, urlImage) {
         if (!estPlace(p)) continue;
         const choisi = options.selection === p.id;
         positions.push(versCarte(p.x, p.y));
+        const but = options.destination === p.id;
         const m = L.marker(versCarte(p.x, p.y), {
-          icon: icone(p, choisi, options.etat ? options.etat(p) : ''),
-          zIndexOffset: choisi ? 1000 : 0,
+          icon: icone(p, choisi, options.etat ? options.etat(p) : '', but),
+          zIndexOffset: choisi ? 1000 : but ? 900 : 0,
           keyboard: false,
           interactive: options.interactif !== false,
         });
@@ -137,6 +139,27 @@ export function creerCarte(conteneur, plan, urlImage) {
     afficherFantome(p) {
       if (fantome) { fantome.remove(); fantome = null; }
       if (p) fantome = L.marker(versCarte(p.x, p.y), { icon: pastille('fantome', 22), interactive: false, keyboard: false, zIndexOffset: 2500 }).addTo(carte);
+    },
+
+    // Ligne droite entre deux endroits du plan (ma position et ma destination). Sans arguments : l'efface.
+    afficherTrajet(a, b) {
+      if (!a || !b) {
+        if (trajet) { trajet.forEach((t) => t.remove()); trajet = null; }
+        return;
+      }
+      const points = [versCarte(a.x, a.y), versCarte(b.x, b.y)];
+      if (!trajet) {
+        trajet = [
+          L.polyline(points, { color: '#05070a', weight: 9, opacity: 0.75, lineCap: 'round', interactive: false }).addTo(carte),
+          L.polyline(points, { color: '#ffffff', weight: 4, opacity: 1, lineCap: 'round', interactive: false }).addTo(carte),
+        ];
+      } else {
+        trajet.forEach((t) => t.setLatLngs(points));
+      }
+    },
+    // Cadre le plan pour voir deux endroits à la fois.
+    voirEnsemble(a, b) {
+      carte.fitBounds(L.latLngBounds([versCarte(a.x, a.y), versCarte(b.x, b.y)]).pad(0.3), { maxZoom: zoomEntier + 2.5 });
     },
 
     centrer(x, y) {

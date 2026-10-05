@@ -12,7 +12,9 @@ Adresse du site : **https://hugoniverts.github.io/ibilaw/**
 | 1 | Lieux, image du plan, points, liste collée, export / import | Fait |
 | 1 | Position GPS, capture, simulation | Fait, à tester sur iPhone |
 | 1 | Calage du plan, fusion des captures de deux téléphones | Fait, à tester sur iPhone |
-| 2 | Recherche de destination, session d'équipe, positions en direct | À faire |
+| 2 | Destination (ligne et distance), écran noir de poche | Fait, à tester sur iPhone |
+| 2 | Session d'équipe, positions en direct | À faire (compte Supabase à créer) |
+| 2 | Essais : suivi en fond par une autre appli, boussole | À faire |
 | 3 | Traces et fichiers GPX | À faire |
 
 ## Mettre le site en ligne
@@ -76,6 +78,13 @@ Clic droit sur `serveur-local.ps1`, « Exécuter avec PowerShell », puis ouvrir
 ## Modifier les catégories, les fonctions et les réglages
 
 Tout est dans `config.js` : catégories de points (nom, couleur, symbole), fonctions de l'équipe (nom, couleur), seuil de précision GPS, durée d'une capture. Republier le site après modification.
+
+## Se repérer (onglet « Carte », pour tout le monde)
+
+- **Voir sa position :** toucher 📡 sur le plan et autoriser la position. La pastille bleue apparaît dès que le plan est calé ; le cercle autour montre la précision. Le bouton devient ◎ : il recentre le plan sur soi.
+- **Chercher un point :** « Points », puis taper son nom ou filtrer par catégorie.
+- **Aller quelque part :** toucher un point, puis « Y aller ». Un bandeau bleu affiche la distance en mètres, mise à jour en continu, et une ligne blanche relie ta position au point. C'est une ligne droite, pas un itinéraire par les allées. « environ » devant la distance signifie que le point n'a pas été capturé au GPS : la distance est estimée sur le plan.
+- **Mettre le téléphone dans la poche :** toucher 🌑. L'écran devient noir et ne réagit plus, mais l'appli reste ouverte et la position continue. Garder le doigt appuyé 2 secondes pour revenir. Ne pas verrouiller le téléphone : cela arrêterait la position.
 
 ## S'entraîner chez soi (mode simulation)
 

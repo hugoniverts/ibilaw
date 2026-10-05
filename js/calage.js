@@ -196,6 +196,8 @@ export function calculerCalage(points, preference = 'auto') {
   return {
     ok: true, n, methode, recommandee, soupleDisponible: !!souple, erreurMoyenne, ecarts,
     pixelsParMetre: Math.sqrt(Math.abs(det)) / etalement,
+    // Distance approximative, en mètres, entre deux endroits du plan ({ x, y }).
+    metresEntre: (p, q) => enMetres(q.x - p.x, q.y - p.y),
     convertir(lat, lon) {
       const q = versMetres(lat, lon, origine);
       return f(q.e / etalement, q.n / etalement);
