@@ -1,0 +1,642 @@
+// Écran d'un lieu : le plan et ses points.
+//   onglet « Carte »    : consulter (tout le monde)
+//   onglet « Préparer » : importer le plan, poser / modifier les points (code admin)
+
+import { CATEGORIES } from '../config.js';
+import {
+  h, mettre, vider, toast, demander, confirmer, ouvrirFeuille, fermerFeuille,
+  choisirFichier, partagerOuTelecharger, sansAccents, formatOctets,
+} from './outils.js';
+import * as lieux from './lieux.js';
+import { creerCarte } from './carte.js';
+
+export async function ecranLieu(zone, id) {
+  const lieu = await lieux.lireLieu(id);
+  if (!lieu) {
+    toast('Ce lieu n\'est plus sur ce téléphone.', 'erreur');
+    location.hash = '#/';
+    return null;
+  }
+
+  const etat = {
+    mode: 'carte',
+    admin: await lieux.estDeverrouille(id),
+    // Action en cours sur le plan :
+    //   { type: 'placer', file: [ids des points à placer], dernier }  ou  { type: 'deplacer', id }
+    action: null,
+    selection: null,              // id du point mis en avant
+    masquees: new Set(),          // catégories masquées
+    recherche: '',
+    derniereCategorie: CATEGORIES[0].id,
+  };
+  let carte = null;
+  let urlImage = null;
+
+  const titre = h('div', { class: 'barre-titre' }, lieu.nom);
+  const bandeau = h('div', { class: 'bandeau', hidden: true });
+  const zoneCarte = h('div', { class: 'zone-carte' });
+  const actions = h('div', { class: 'barre-actions' });
+  const onglets = h('nav', { class: 'onglets' });
+  zone.classList.add('ecran-lieu');
+  zone.append(
+    h('header', { class: 'barre-haut' },
+      h('button', { class: 'btn-icone', 'aria-label': 'Retour à la liste des lieux', onclick: () => { location.hash = '#/'; } }, '‹'),
+      titre,
+      h('button', { class: 'btn-icone', 'aria-label': 'Menu du lieu', onclick: ouvrirMenu }, '⋯')),
+    bandeau,
+    zoneCarte,
+    h('div', { class: 'barre-bas' }, actions, onglets));
+
+  const trouver = (pointId) => lieu.points.find((p) => p.id === pointId);
+
+  async function sauver() {
+    try {
+      await lieux.enregistrerLieu(lieu);
+    } catch (e) {
+      toast('Enregistrement impossible : ' + e.message, 'erreur', 6000);
+    }
+  }
+
+  async function exigerAdmin() {
+    if (etat.admin) return true;
+    const v = await demander({
+      titre: 'Code admin',
+      message: `La préparation de « ${lieu.nom} » est protégée.`,
+      champs: [{ nom: 'code', label: 'Code admin de ce lieu' }],
+      valider: 'Déverrouiller',
+    });
+    if (!v) return false;
+    if (!(await lieux.verifierCode(lieu, v.code))) {
+      toast('Code incorrect.', 'erreur');
+      return false;
+    }
+    await lieux.deverrouiller(lieu.id);
+    etat.admin = true;
+    return true;
+  }
+
+  // -------------------------------------------------------------------
+  // Le plan
+  // -------------------------------------------------------------------
+  async function monterCarte() {
+    if (carte) { carte.detruire(); carte = null; }
+    if (urlImage) { URL.revokeObjectURL(urlImage); urlImage = null; }
+    vider(zoneCarte);
+    const plan = lieu.plan ? await lieux.lirePlan(lieu.id) : null;
+    if (!plan) {
+      zoneCarte.append(h('div', { class: 'sans-plan' },
+        h('p', null, 'Ce lieu n\'a pas encore de plan.'),
+        etat.admin
+          ? h('button', { class: 'btn btn-principal btn-large', onclick: importerPlan }, '🖼 Importer l\'image du plan')
+          : h('button', { class: 'btn btn-large', onclick: async () => { if (await exigerAdmin()) { await monterCarte(); dessiner(); } } }, '🔓 Déverrouiller pour importer le plan'),
+        etat.admin && h('p', { class: 'aide' }, 'Image JPG ou PNG. Un PDF doit d\'abord être converti en image.')));
+      return;
+    }
+    urlImage = URL.createObjectURL(new Blob([plan.donnees], { type: plan.type }));
+    const conteneur = h('div', { class: 'plan' });
+    zoneCarte.append(conteneur,
+      h('div', { class: 'boutons-carte' },
+        h('button', { 'aria-label': 'Zoomer', onclick: () => carte.zoomer(1) }, '＋'),
+        h('button', { 'aria-label': 'Dézoomer', onclick: () => carte.zoomer(-1) }, '－'),
+        h('button', { 'aria-label': 'Voir tout le plan', onclick: () => carte.toutVoir() }, '⤢')));
+    carte = creerCarte(conteneur, lieu.plan, urlImage);
+    carte.surClicPlan(surClicPlan);
+    carte.surClicPoint(surClicPoint);
+  }
+
+  function dessiner() {
+    if (carte) {
+      carte.afficherPoints(lieu.points.filter((p) => !etat.masquees.has(p.categorie)), {
+        selection: etat.selection,
+        interactif: !etat.action,
+      });
+    }
+    dessinerBandeau();
+    dessinerBarres();
+  }
+
+  function deselectionner() {
+    etat.selection = null;
+    if (carte) carte.retirerProvisoire();
+    dessiner();
+  }
+
+  // Décale le plan pour que le point reste visible à côté de la feuille ouverte.
+  function garderVisible(point, feuille) {
+    if (!carte || !lieux.estPlace(point)) return;
+    const c = zoneCarte.getBoundingClientRect();
+    const f = feuille.getBoundingClientRect();
+    const enBas = f.width > c.width * 0.7;
+    carte.garderVisible(point.x, point.y, enBas
+      ? { bas: Math.max(0, c.bottom - f.top) }
+      : { droite: Math.max(0, c.right - f.left) });
+  }
+
+  function surClicPlan(p) {
+    if (etat.action && etat.action.type === 'placer') { placer(p); return; }
+    if (etat.action && etat.action.type === 'deplacer') { deplacer(p); return; }
+    if (etat.mode === 'preparer') { nouveauPointIci(p); return; }
+    if (etat.selection) { fermerFeuille(); deselectionner(); }
+  }
+
+  function surClicPoint(point) {
+    etat.selection = point.id;
+    dessiner();
+    if (etat.mode === 'preparer') ouvrirEdition(point);
+    else ouvrirFiche(point);
+  }
+
+  // -------------------------------------------------------------------
+  // Bandeau d'instruction (placement / déplacement en cours)
+  // -------------------------------------------------------------------
+  function dessinerBandeau() {
+    vider(bandeau);
+    const a = etat.action;
+    const point = a && trouver(a.type === 'placer' ? a.file[0] : a.id);
+    if (a && !point) { etat.action = null; }
+    bandeau.hidden = !etat.action;
+    if (!etat.action) return;
+    if (a.type === 'placer') {
+      const cat = lieux.categorie(point.categorie);
+      bandeau.append(
+        h('div', { class: 'bandeau-texte' },
+          h('span', null, 'Touche le plan pour placer'),
+          h('strong', null, `${cat.symbole} ${point.nom}`),
+          a.file.length > 1 && h('small', null, `encore ${a.file.length} à placer`)),
+        h('div', { class: 'bandeau-boutons' },
+          a.dernier && h('button', { class: 'btn', onclick: annulerDernier }, '↩ Annuler'),
+          a.file.length > 1 && h('button', { class: 'btn', onclick: passer }, 'Passer'),
+          h('button', { class: 'btn', onclick: arreterAction }, 'Arrêter')));
+    } else {
+      bandeau.append(
+        h('div', { class: 'bandeau-texte' },
+          h('span', null, 'Touche le nouvel emplacement de'),
+          h('strong', null, point.nom)),
+        h('div', { class: 'bandeau-boutons' },
+          h('button', { class: 'btn', onclick: arreterAction }, 'Annuler')));
+    }
+  }
+
+  function arreterAction() {
+    etat.action = null;
+    etat.selection = null;
+    dessiner();
+  }
+
+  function commencerPlacement(ids) {
+    fermerFeuille();
+    etat.action = { type: 'placer', file: ids.slice(), dernier: null };
+    etat.selection = null;
+    dessiner();
+  }
+
+  async function placer(p) {
+    const a = etat.action;
+    const point = trouver(a.file.shift());
+    if (point) {
+      a.dernier = { id: point.id, x: point.x, y: point.y };
+      Object.assign(point, { x: p.x, y: p.y, maj: Date.now() });
+      await sauver();
+    }
+    if (etat.action === a && !a.file.length) {
+      etat.action = null;
+      toast(point ? `« ${point.nom} » placé ✅` : 'Placement terminé');
+    }
+    dessiner();
+  }
+
+  function passer() {
+    etat.action.file.shift();
+    etat.action.dernier = null;
+    dessiner();
+  }
+
+  async function annulerDernier() {
+    const a = etat.action;
+    const point = a && a.dernier && trouver(a.dernier.id);
+    if (!point) return;
+    Object.assign(point, { x: a.dernier.x, y: a.dernier.y, maj: Date.now() });
+    a.file.unshift(point.id);
+    a.dernier = null;
+    await sauver();
+    dessiner();
+  }
+
+  function commencerDeplacement(point) {
+    fermerFeuille();
+    etat.action = { type: 'deplacer', id: point.id };
+    etat.selection = point.id;
+    dessiner();
+  }
+
+  async function deplacer(p) {
+    const point = trouver(etat.action.id);
+    etat.action = null;
+    etat.selection = null;
+    if (point) {
+      Object.assign(point, { x: p.x, y: p.y, maj: Date.now() });
+      await sauver();
+      toast('Point déplacé');
+    }
+    dessiner();
+  }
+
+  // -------------------------------------------------------------------
+  // Barres du bas
+  // -------------------------------------------------------------------
+  function onglet(mode, texte) {
+    return h('button', { class: 'onglet' + (etat.mode === mode ? ' actif' : ''), onclick: () => changerMode(mode) }, texte);
+  }
+
+  function dessinerBarres() {
+    vider(actions);
+    const aPlacer = lieu.points.filter((p) => !lieux.estPlace(p)).length;
+    if (etat.mode === 'carte') {
+      actions.append(h('button', { class: 'btn', onclick: ouvrirListe }, `🔍 Points (${lieu.points.length})`));
+    } else {
+      mettre(actions,
+        lieu.plan && h('div', { class: 'astuce' }, 'Touche le plan pour ajouter un point, ou un point pour le modifier.'),
+        h('button', { class: 'btn' + (aPlacer ? ' btn-principal' : ''), onclick: ouvrirListe },
+          aPlacer ? `📋 ${aPlacer} à placer` : `📋 Points (${lieu.points.length})`),
+        h('button', { class: 'btn', onclick: ouvrirCollage }, '＋ Liste'));
+    }
+    vider(onglets).append(
+      onglet('carte', 'Carte'),
+      onglet('preparer', (etat.admin ? '' : '🔒 ') + 'Préparer'));
+  }
+
+  async function changerMode(mode) {
+    if (mode === etat.mode) return;
+    if (mode !== 'carte' && !(await exigerAdmin())) return;
+    fermerFeuille();
+    etat.mode = mode;
+    etat.action = null;
+    etat.selection = null;
+    if (carte) carte.retirerProvisoire();
+    if (!lieu.plan) await monterCarte();
+    dessiner();
+  }
+
+  // -------------------------------------------------------------------
+  // Fiche d'un point (onglet Carte)
+  // -------------------------------------------------------------------
+  function ouvrirFiche(point) {
+    const cat = lieux.categorie(point.categorie);
+    const feuille = ouvrirFeuille({
+      titre: `${cat.symbole} ${point.nom}`,
+      contenu: h('p', { class: 'aide' }, cat.nom + (point.capture ? ' · position GPS capturée' : '')),
+      surFermeture: deselectionner,
+    });
+    garderVisible(point, feuille);
+  }
+
+  // -------------------------------------------------------------------
+  // Formulaire d'un point (onglet Préparer)
+  // -------------------------------------------------------------------
+  function formulairePoint({ titreFeuille, point, texteValider, surValidation, extras }) {
+    let cat = point.categorie;
+    const nom = h('input', {
+      class: 'champ', type: 'text', value: point.nom, placeholder: 'Nom du point',
+      autocomplete: 'off', autocapitalize: 'sentences', enterKeyHint: 'done',
+    });
+    const grille = h('div', { class: 'grille-categories' });
+    const dessinerCategories = () => {
+      vider(grille);
+      for (const c of CATEGORIES) {
+        grille.append(h('button', {
+          type: 'button', class: 'puce' + (c.id === cat ? ' active' : ''), style: `--c:${c.couleur}`,
+          onclick: () => { cat = c.id; dessinerCategories(); },
+        }, `${c.symbole} ${c.nom}`));
+      }
+    };
+    dessinerCategories();
+    const formulaire = h('form', {
+      class: 'pile',
+      onsubmit: async (e) => {
+        e.preventDefault();
+        const n = nom.value.trim();
+        if (!n) { nom.focus(); return; }
+        etat.derniereCategorie = cat;
+        await surValidation({ nom: n, categorie: cat });
+        fermerFeuille();
+      },
+    }, nom, grille, h('button', { type: 'submit', class: 'btn btn-principal btn-large' }, texteValider), extras);
+    const feuille = ouvrirFeuille({ titre: titreFeuille, contenu: formulaire, surFermeture: deselectionner });
+    if (!point.nom) nom.focus();
+    return feuille;
+  }
+
+  function nouveauPointIci(p) {
+    carte.montrerProvisoire(p.x, p.y);
+    const feuille = formulairePoint({
+      titreFeuille: 'Nouveau point',
+      point: { nom: '', categorie: etat.derniereCategorie },
+      texteValider: 'Ajouter ce point',
+      surValidation: async (v) => {
+        lieu.points.push(lieux.nouveauPoint({ ...v, x: p.x, y: p.y }));
+        await sauver();
+        toast(`« ${v.nom} » ajouté`);
+      },
+    });
+    garderVisible(p, feuille);
+  }
+
+  function ouvrirEdition(point) {
+    const place = lieux.estPlace(point);
+    const feuille = formulairePoint({
+      titreFeuille: 'Modifier le point',
+      point,
+      texteValider: 'Enregistrer',
+      surValidation: async (v) => {
+        Object.assign(point, v, { maj: Date.now() });
+        await sauver();
+      },
+      extras: h('div', { class: 'rangee' },
+        h('button', { type: 'button', class: 'btn', onclick: () => (place ? commencerDeplacement(point) : commencerPlacement([point.id])) },
+          place ? '✥ Déplacer' : '📍 Placer sur le plan'),
+        h('button', { type: 'button', class: 'btn btn-danger', onclick: () => supprimerPoint(point) }, '🗑 Supprimer')),
+    });
+    garderVisible(point, feuille);
+  }
+
+  async function supprimerPoint(point) {
+    const ok = await confirmer({
+      titre: 'Supprimer ce point ?',
+      message: `« ${point.nom} »` + (point.capture ? ' — sa capture GPS sera perdue.' : ''),
+      valider: 'Supprimer',
+      danger: true,
+    });
+    if (!ok) return;
+    lieu.points = lieu.points.filter((p) => p.id !== point.id);
+    await sauver();
+    fermerFeuille();
+    dessiner();
+    toast('Point supprimé');
+  }
+
+  // -------------------------------------------------------------------
+  // Liste des points : recherche, filtres par catégorie
+  // -------------------------------------------------------------------
+  function ouvrirListe() {
+    const preparation = etat.mode === 'preparer';
+    const champ = h('input', {
+      class: 'champ', type: 'search', placeholder: 'Chercher un point…', value: etat.recherche,
+      autocomplete: 'off', enterKeyHint: 'search',
+      oninput: () => { etat.recherche = champ.value; remplir(); },
+    });
+    const filtres = h('div', { class: 'puces' });
+    const tete = h('div', { class: 'pile' });
+    const corps = h('div', { class: 'liste' });
+
+    function dessinerFiltres() {
+      vider(filtres);
+      for (const c of CATEGORIES) {
+        const nombre = lieu.points.filter((p) => p.categorie === c.id).length;
+        if (!nombre) continue;
+        filtres.append(h('button', {
+          class: 'puce' + (etat.masquees.has(c.id) ? '' : ' active'), style: `--c:${c.couleur}`,
+          'aria-pressed': String(!etat.masquees.has(c.id)),
+          onclick: () => {
+            if (etat.masquees.has(c.id)) etat.masquees.delete(c.id); else etat.masquees.add(c.id);
+            dessinerFiltres();
+            remplir();
+            dessiner();
+          },
+        }, `${c.symbole} ${c.nom} (${nombre})`));
+      }
+    }
+
+    function remplir() {
+      vider(tete);
+      vider(corps);
+      const q = sansAccents(etat.recherche);
+      const visibles = lieu.points.filter((p) => !etat.masquees.has(p.categorie) && (!q || sansAccents(p.nom).includes(q)));
+      const aPlacer = visibles.filter((p) => !lieux.estPlace(p));
+      const places = visibles.filter(lieux.estPlace).sort((a, b) => a.nom.localeCompare(b.nom, 'fr'));
+      if (preparation && lieu.plan && aPlacer.length > 1) {
+        tete.append(h('button', { class: 'btn btn-principal btn-large', onclick: () => commencerPlacement(aPlacer.map((p) => p.id)) },
+          `📍 Placer ces ${aPlacer.length} points à la suite`));
+      }
+      if (!lieu.points.length) {
+        corps.append(h('p', { class: 'vide' }, preparation
+          ? 'Aucun point. Touche le plan pour en poser un, ou colle une liste.'
+          : 'Aucun point pour l\'instant.'));
+      } else if (!visibles.length) {
+        corps.append(h('p', { class: 'vide' }, 'Aucun point ne correspond.'));
+      }
+      // Les points à placer d'abord (dans l'ordre de la liste collée), puis les autres par ordre alphabétique.
+      for (const p of [...aPlacer, ...places]) {
+        const cat = lieux.categorie(p.categorie);
+        corps.append(h('button', { class: 'ligne', onclick: () => choisir(p) },
+          h('span', { class: 'ligne-symbole', style: `--c:${cat.couleur}` }, cat.symbole),
+          h('span', { class: 'ligne-nom' }, p.nom),
+          !lieux.estPlace(p) && h('span', { class: 'badge badge-attention' }, 'à placer'),
+          p.capture && h('span', { class: 'badge badge-ok' }, 'capturé')));
+      }
+    }
+
+    function choisir(point) {
+      if (!lieux.estPlace(point)) {
+        if (!preparation) { toast('Ce point n\'est pas encore placé sur le plan.'); return; }
+        if (!lieu.plan) { toast('Importe d\'abord l\'image du plan.'); return; }
+        commencerPlacement([point.id]);
+        return;
+      }
+      fermerFeuille();
+      etat.selection = point.id;
+      dessiner();
+      if (carte) carte.centrer(point.x, point.y);
+      if (preparation) ouvrirEdition(point); else ouvrirFiche(point);
+    }
+
+    dessinerFiltres();
+    remplir();
+    ouvrirFeuille({ titre: `Points (${lieu.points.length})`, contenu: [champ, filtres, tete, corps], haute: true });
+  }
+
+  // -------------------------------------------------------------------
+  // Coller une liste de points
+  // -------------------------------------------------------------------
+  function ouvrirCollage() {
+    const zoneTexte = h('textarea', {
+      class: 'champ zone-texte', rows: 8, spellcheck: false, autocapitalize: 'off',
+      placeholder: 'Un point par ligne :\nKondaa;attraction\nPizza Solo;restauration\nLoge;base technique',
+      oninput: analyser,
+    });
+    const resume = h('p', { class: 'aide' });
+    const bouton = h('button', { class: 'btn btn-principal btn-large', disabled: true, onclick: ajouter }, 'Ajouter');
+    let analyse = { points: [] };
+
+    function analyser() {
+      analyse = lieux.analyserListe(zoneTexte.value, lieu.points);
+      const n = analyse.points.length;
+      const morceaux = [`${n} point${n > 1 ? 's' : ''} reconnu${n > 1 ? 's' : ''}`];
+      if (analyse.doublons.length) morceaux.push(`${analyse.doublons.length} déjà présent${analyse.doublons.length > 1 ? 's' : ''} (ignoré${analyse.doublons.length > 1 ? 's' : ''})`);
+      if (analyse.categoriesInconnues.length) {
+        morceaux.push(`catégorie inconnue classée « Autre » : ${[...new Set(analyse.categoriesInconnues)].join(', ')}`);
+      }
+      resume.textContent = zoneTexte.value.trim() ? morceaux.join(' · ') : '';
+      bouton.disabled = !n;
+      bouton.textContent = n ? `Ajouter ${n} point${n > 1 ? 's' : ''}` : 'Ajouter';
+    }
+
+    async function ajouter() {
+      const n = analyse.points.length;
+      if (!n) return;
+      lieu.points.push(...analyse.points);
+      await sauver();
+      toast(`${n} point${n > 1 ? 's' : ''} ajouté${n > 1 ? 's' : ''}. Il reste à les placer sur le plan.`, 'info', 5000);
+      dessiner();
+      ouvrirListe();
+    }
+
+    ouvrirFeuille({
+      titre: 'Coller une liste de points',
+      haute: true,
+      contenu: [
+        h('p', { class: 'aide' }, 'Une ligne par point : le nom, un point-virgule, la catégorie. Un copier-coller de deux colonnes Excel marche aussi.'),
+        zoneTexte,
+        resume,
+        bouton,
+        h('p', { class: 'aide' }, 'Catégories : ' + CATEGORIES.map((c) => c.nom.toLowerCase()).join(', ') + '.'),
+      ],
+    });
+  }
+
+  // -------------------------------------------------------------------
+  // Menu du lieu
+  // -------------------------------------------------------------------
+  function ouvrirMenu() {
+    const bouton = (texte, action, classe = '') => h('button', { class: 'btn btn-large btn-gauche ' + classe, onclick: action }, texte);
+    ouvrirFeuille({
+      titre: lieu.nom,
+      haute: true,
+      contenu: [
+        bouton('📤 Exporter ce lieu (fichier)', exporter),
+        etat.admin && bouton('🖼 Changer l\'image du plan', importerPlan),
+        etat.admin && bouton('✏️ Renommer le lieu', renommer),
+        etat.admin
+          ? bouton('🔒 Verrouiller le mode admin', verrouiller)
+          : bouton('🔓 Déverrouiller le mode admin', deverrouillerDepuisMenu),
+        bouton('🩺 Diagnostic du téléphone', () => { location.hash = '#/diagnostic'; }),
+        etat.admin && bouton('🗑 Supprimer ce lieu', supprimerLieu, 'btn-danger'),
+      ],
+    });
+  }
+
+  async function deverrouillerDepuisMenu() {
+    fermerFeuille();
+    if (!(await exigerAdmin())) return;
+    toast('Mode admin déverrouillé');
+    if (!lieu.plan) await monterCarte();
+    dessiner();
+  }
+
+  async function verrouiller() {
+    fermerFeuille();
+    await lieux.verrouiller(lieu.id);
+    etat.admin = false;
+    etat.mode = 'carte';
+    etat.action = null;
+    etat.selection = null;
+    if (!lieu.plan) await monterCarte();
+    dessiner();
+    toast('Mode admin verrouillé');
+  }
+
+  async function exporter() {
+    fermerFeuille();
+    let fichier;
+    try {
+      fichier = await lieux.exporterLieu(lieu.id);
+    } catch (e) {
+      toast('Export impossible : ' + e.message, 'erreur', 6000);
+      return;
+    }
+    // Le partage doit partir directement d'un appui (exigence d'iOS) : d'où ce second bouton.
+    ouvrirFeuille({
+      titre: 'Fichier prêt',
+      contenu: [
+        h('p', null, `${fichier.name} (${formatOctets(fichier.size)})`),
+        h('p', { class: 'aide' }, 'Ce fichier contient tout le lieu : plan, points, captures, calage. Envoie-le-toi (mail, WhatsApp, Drive) pour le sauvegarder, ou pour l\'ouvrir sur un autre appareil avec « Importer un lieu ».'),
+        h('button', {
+          class: 'btn btn-principal btn-large',
+          onclick: async () => {
+            const resultat = await partagerOuTelecharger(fichier);
+            if (resultat === 'telecharge') toast('Fichier enregistré dans les téléchargements');
+            if (resultat !== 'annule') fermerFeuille();
+          },
+        }, '📤 Envoyer / enregistrer le fichier'),
+      ],
+    });
+  }
+
+  async function importerPlan() {
+    fermerFeuille();
+    const fichier = await choisirFichier('image/jpeg,image/png,image/webp');
+    if (!fichier) return;
+    toast('Préparation de l\'image…');
+    let image;
+    try {
+      image = await lieux.preparerImagePlan(fichier);
+    } catch (e) {
+      toast(e.message, 'erreur', 6000);
+      return;
+    }
+    const tailleChange = lieu.plan && (lieu.plan.largeur !== image.largeur || lieu.plan.hauteur !== image.hauteur);
+    if (tailleChange && lieu.points.some(lieux.estPlace)) {
+      const ok = await confirmer({
+        titre: 'Remplacer le plan ?',
+        message: 'La nouvelle image n\'a pas la même taille. Les points déjà placés seront remis à l\'échelle : c\'est bon si c\'est le même dessin, sinon il faudra les replacer. Le calage sera à refaire.',
+        valider: 'Remplacer',
+      });
+      if (!ok) return;
+    }
+    try {
+      await lieux.definirPlan(lieu, image);
+    } catch (e) {
+      toast('Enregistrement du plan impossible : ' + e.message, 'erreur', 6000);
+      return;
+    }
+    await monterCarte();
+    dessiner();
+    toast(image.reduite ? `Plan importé (image réduite à ${image.largeur} × ${image.hauteur} pixels)` : 'Plan importé ✅', 'info', 5000);
+  }
+
+  async function renommer() {
+    fermerFeuille();
+    const v = await demander({
+      titre: 'Renommer le lieu',
+      champs: [{ nom: 'nom', label: 'Nom du lieu', valeur: lieu.nom, majuscules: true }],
+      valider: 'Renommer',
+    });
+    if (!v) return;
+    lieu.nom = v.nom;
+    await sauver();
+    titre.textContent = lieu.nom;
+  }
+
+  async function supprimerLieu() {
+    fermerFeuille();
+    const ok = await confirmer({
+      titre: 'Supprimer ce lieu ?',
+      message: `« ${lieu.nom} », son plan, ses ${lieu.points.length} points et ses traces seront effacés de ce téléphone. Exporte-le d'abord si tu veux le garder.`,
+      valider: 'Supprimer définitivement',
+      danger: true,
+    });
+    if (!ok) return;
+    await lieux.supprimerLieu(lieu.id);
+    toast('Lieu supprimé');
+    location.hash = '#/';
+  }
+
+  // Les barres d'abord (pour que le plan connaisse sa vraie hauteur), puis le plan.
+  dessiner();
+  await monterCarte();
+  dessiner();
+
+  return () => {
+    if (carte) carte.detruire();
+    if (urlImage) URL.revokeObjectURL(urlImage);
+  };
+}
